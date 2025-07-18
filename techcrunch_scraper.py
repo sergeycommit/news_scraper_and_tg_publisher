@@ -53,6 +53,10 @@ class TechCrunchScraper:
         self.json_folder = 'articles_archive'
         self.create_json_folder()
         
+        # Файл для отслеживания опубликованных URL
+        self.published_urls_file = 'published_urls.json'
+        self.published_urls = self.load_published_urls()
+        
         # Инициализация клиентов
         self.openai_client = OpenAI(
             api_key=self.openrouter_api_key,
@@ -66,6 +70,7 @@ class TechCrunchScraper:
         }
         
         logger.info("TechCrunch Scraper initialized successfully")
+        logger.info(f"Loaded {len(self.published_urls)} previously published URLs")
     
     def create_json_folder(self):
         """Создание папки для JSON файлов"""
@@ -79,6 +84,63 @@ class TechCrunchScraper:
             logger.error(f"Error creating JSON folder: {e}")
             # Если не удалось создать папку, используем текущую директорию
             self.json_folder = '.'
+    
+    def load_published_urls(self):
+        """Загрузка списка уже опубликованных URL"""
+        try:
+            if os.path.exists(self.published_urls_file):
+                with open(self.published_urls_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    published_urls = set(data.get('published_urls', []))
+                    logger.info(f"Loaded {len(published_urls)} published URLs from {self.published_urls_file}")
+                    return published_urls
+            else:
+                logger.info(f"Published URLs file not found, creating new one: {self.published_urls_file}")
+                return set()
+        except Exception as e:
+            logger.error(f"Error loading published URLs: {e}")
+            return set()
+    
+    def save_published_urls(self):
+        """Сохранение списка опубликованных URL"""
+        try:
+            data = {
+                'published_urls': list(self.published_urls),
+                'last_updated': datetime.now().isoformat(),
+                'total_count': len(self.published_urls)
+            }
+            
+            with open(self.published_urls_file, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            
+            logger.info(f"Saved {len(self.published_urls)} published URLs to {self.published_urls_file}")
+        except Exception as e:
+            logger.error(f"Error saving published URLs: {e}")
+    
+    def add_published_url(self, url):
+        """Добавление URL в список опубликованных"""
+        self.published_urls.add(url)
+        self.save_published_urls()
+        logger.info(f"Added URL to published list: {url}")
+    
+    def is_url_published(self, url):
+        """Проверка, был ли URL уже опубликован"""
+        return url in self.published_urls
+    
+    def filter_unpublished_articles(self, articles):
+        """Фильтрация статей, исключая уже опубликованные"""
+        unpublished_articles = []
+        skipped_count = 0
+        
+        for article in articles:
+            if not self.is_url_published(article['link']):
+                unpublished_articles.append(article)
+            else:
+                skipped_count += 1
+                logger.info(f"Skipping already published article: {article['title']}")
+        
+        logger.info(f"Filtered articles: {len(unpublished_articles)} unpublished, {skipped_count} already published")
+        return unpublished_articles
     
     def scrape_rss_feed(self):
         """Скрапинг RSS ленты TechCrunch"""
@@ -343,11 +405,11 @@ class TechCrunchScraper:
         """Создание вирального поста для Telegram с помощью AI"""
         try:
             prompt = f"""
-            Создай виральный пост для Telegram канала о ИИ технологиях длинной до 1024 символа на основе этой статьи с TechCrunch.
+            Создай для Telegram канала на основе этой статьи виральный пост длинной до 900 символов. Используй разметку, отступы и эмоджи. Вопрос в конце поста не нужен.
 
             Заголовок статьи: {article_title}
             
-            Содержание статьи: {article_content[:3000]}
+            Содержание статьи: {article_content[:2900]}
             """
             
             response = self.openai_client.chat.completions.create(
@@ -465,25 +527,31 @@ class TechCrunchScraper:
                 logger.error("No articles found in RSS feed")
                 return False
             
-            # 2. Выбор лучшей статьи с помощью AI
-            best_article = self.select_best_article(articles)
+            # 2. Фильтрация уже опубликованных статей
+            unpublished_articles = self.filter_unpublished_articles(articles)
+            if not unpublished_articles:
+                logger.warning("All articles have already been published")
+                return False
+            
+            # 3. Выбор лучшей статьи с помощью AI
+            best_article = self.select_best_article(unpublished_articles)
             if not best_article:
                 logger.error("No suitable article selected")
                 return False
             
-            # 3. Скрапинг содержимого статьи и изображения
+            # 4. Скрапинг содержимого статьи и изображения
             article_content, image_url = self.scrape_article_content_and_image(best_article['link'])
             if not article_content:
                 logger.error("Failed to scrape article content")
                 return False
             
-            # 4. Скачивание изображения
+            # 5. Скачивание изображения
             if image_url:
                 image_path = self.download_image(image_url)
                 if not image_path:
                     logger.warning("Failed to download image, will publish without it")
             
-            # 5. Создание вирального поста с помощью AI
+            # 6. Создание вирального поста с помощью AI
             post_content = self.create_viral_post(
                 best_article['title'],
                 article_content,
@@ -493,13 +561,16 @@ class TechCrunchScraper:
                 logger.error("Failed to create viral post")
                 return False
             
-            # 6. Публикация в Telegram с изображением
+            # 7. Публикация в Telegram с изображением
             success = await self.publish_to_telegram(post_content, image_path)
             if not success:
                 logger.error("Failed to publish to Telegram")
                 return False
             
-            # 7. Сохранение данных
+            # 8. Добавление URL в список опубликованных
+            self.add_published_url(best_article['link'])
+            
+            # 9. Сохранение данных
             self.save_article_data(best_article, post_content, image_url)
             
             logger.info("Daily scraping process completed successfully")

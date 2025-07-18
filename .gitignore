@@ -11,6 +11,9 @@ scraper.log
 article_*.json
 articles_archive/
 
+# Published URLs tracking
+published_urls.json
+
 # Python
 __pycache__/
 *.py[cod]
