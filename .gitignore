@@ -6,13 +6,17 @@
 # Logs
 *.log
 scraper.log
+ieee_scraper.log
 
 # Article archives
 article_*.json
 articles_archive/
+ieee_article_*.json
+ieee_articles_archive/
 
 # Published URLs tracking
 published_urls.json
+ieee_published_urls.json
 
 # Python
 __pycache__/

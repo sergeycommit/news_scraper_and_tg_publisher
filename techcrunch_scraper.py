@@ -431,10 +431,55 @@ class TechCrunchScraper:
             logger.error(f"Error creating viral post: {e}")
             return None
     
+    def convert_markdown_to_html(self, text):
+        """Конвертация Markdown разметки в HTML для Telegram"""
+        try:
+            # Заменяем Markdown на HTML теги
+            import re
+            
+            # Ссылки: [текст](url) -> <a href="url">текст</a> (делаем первым)
+            text = re.sub(r'\[([^\]]+)\]\(([^)]+)\)', r'<a href="\2">\1</a>', text)
+            
+            # Жирный текст: **текст** -> <b>текст</b>
+            text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
+            
+            # Курсив: *текст* -> <i>текст</i>
+            text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+            
+            # Подчеркнутый: __текст__ -> <u>текст</u>
+            text = re.sub(r'__(.*?)__', r'<u>\1</u>', text)
+            
+            # Зачеркнутый: ~~текст~~ -> <s>текст</s>
+            text = re.sub(r'~~(.*?)~~', r'<s>\1</s>', text)
+            
+            # Моноширинный: `текст` -> <code>текст</code>
+            text = re.sub(r'`(.*?)`', r'<code>\1</code>', text)
+            
+            # Экранируем специальные символы HTML (кроме наших тегов)
+            text = text.replace('&', '&amp;')
+            
+            # Восстанавливаем наши HTML теги
+            text = text.replace('&amp;lt;b&amp;gt;', '<b>').replace('&amp;lt;/b&amp;gt;', '</b>')
+            text = text.replace('&amp;lt;i&amp;gt;', '<i>').replace('&amp;lt;/i&amp;gt;', '</i>')
+            text = text.replace('&amp;lt;u&amp;gt;', '<u>').replace('&amp;lt;/u&amp;gt;', '</u>')
+            text = text.replace('&amp;lt;s&amp;gt;', '<s>').replace('&amp;lt;/s&amp;gt;', '</s>')
+            text = text.replace('&amp;lt;code&amp;gt;', '<code>').replace('&amp;lt;/code&amp;gt;', '</code>')
+            text = text.replace('&amp;lt;a href=&amp;quot;', '<a href="').replace('&amp;lt;/a&amp;gt;', '</a>')
+            text = text.replace('&amp;quot;&amp;gt;', '">')
+            
+            return text
+            
+        except Exception as e:
+            logger.error(f"Error converting markdown to HTML: {e}")
+            return text
+
     async def publish_to_telegram(self, post_content, image_path=None):
         """Публикация поста в Telegram канал с изображением"""
         try:
             logger.info(f"Publishing post to Telegram channel: {self.telegram_channel}")
+            
+            # Конвертируем Markdown в HTML
+            html_content = self.convert_markdown_to_html(post_content)
             
             if image_path and os.path.exists(image_path):
                 # Публикуем пост с изображением
@@ -444,7 +489,7 @@ class TechCrunchScraper:
                     await self.telegram_bot.send_photo(
                         chat_id=self.telegram_channel,
                         photo=photo,
-                        caption=post_content,
+                        caption=html_content,
                         parse_mode='HTML'
                     )
                 
@@ -460,8 +505,8 @@ class TechCrunchScraper:
                 logger.info("Publishing post without image")
                 
                 # Разбиваем длинный пост на части, если нужно
-                if len(post_content) > 4096:
-                    parts = [post_content[i:i+4096] for i in range(0, len(post_content), 4096)]
+                if len(html_content) > 4096:
+                    parts = [html_content[i:i+4096] for i in range(0, len(html_content), 4096)]
                     for i, part in enumerate(parts):
                         await self.telegram_bot.send_message(
                             chat_id=self.telegram_channel,
@@ -474,7 +519,7 @@ class TechCrunchScraper:
                 else:
                     await self.telegram_bot.send_message(
                         chat_id=self.telegram_channel,
-                        text=post_content,
+                        text=html_content,
                         parse_mode='HTML',
                         disable_web_page_preview=False
                     )
