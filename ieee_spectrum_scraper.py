@@ -358,7 +358,8 @@ class IEEESpectrumScraper:
             
             # Ищем дату - обновленные селекторы для IEEE Spectrum
             date_selectors = [
-                '[class*="date"]',  # Основной селектор для IEEE
+                '.social-date', '.social-date__text',  # Основные селекторы для IEEE
+                '[class*="date"]',  # Общий селектор для дат
                 'time',
                 '.date', '.time', '[data-testid="date"]',
                 '.article-date', '.post-date', '.published-date',
@@ -391,6 +392,7 @@ class IEEESpectrumScraper:
                 # Ищем дату в тексте элемента
                 element_text = element.get_text()
                 date_patterns = [
+                    r'\d+[hdm]',  # 3h, 1h, 2d, 30m - относительное время IEEE
                     r'\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}',
                     r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}',
                     r'\d{4}-\d{1,2}-\d{1,2}',
@@ -457,7 +459,7 @@ class IEEESpectrumScraper:
                 articles_text += f"   Описание: {article['description'][:200]}...\n\n"
             
             prompt = f"""
-            Ты эксперт по технологиям и контенту. Из следующего списка статей с IEEE Spectrum (AI и Robotics) выбери ОДНУ самую интересную и виральную статью длинной до 1024 символа для публикации в Telegram канале об AI и robotics технологиях.
+            Ты эксперт по технологиям и контенту. Из следующего списка статей с IEEE Spectrum (AI и Robotics) выбери ОДНУ самую интересную и виральную статью для публикации в Telegram канале об AI и robotics технологиях.
 
             Критерии выбора:
             - Потенциал виральности
@@ -824,9 +826,8 @@ class IEEESpectrumScraper:
         """Создание вирального поста для Telegram с помощью AI"""
         try:
             prompt = f"""
-            Создай для Telegram канала на основе этой статьи с IEEE Spectrum виральный пост длинной до 900 символов. Используй разметку, отступы и эmоджи. Вопрос в конце поста не нужен.
+            Создай на основе этой статьи для Telegram канала об AI и Robotics технологиях виральный пост длинной длинной от 700 до 1024 символов(включая теги), вопрос в конце поста не нужен, количество тегов ограничить 5. Стиль информативный. Используй разметку, отступы и эmоджи. Перепроверь в конце количество символов, получившеся подписи, от 700 до 1024(включая теги). Вывести только сам пост.
 
-            Тема: {topic}
             Заголовок статьи: {article_title}
             
             Содержание статьи: {article_content[:2900]}
@@ -968,8 +969,24 @@ class IEEESpectrumScraper:
             return True
             
         except Exception as e:
-            logger.error(f"Error publishing to Telegram: {e}")
-            # Удаляем временный файл в случае ошибки
+            error_message = str(e)
+            logger.error(f"Error publishing to Telegram: {error_message}")
+            
+            # Если ошибка связана с длиной подписи, пересоздаем пост
+            if "caption is too long" in error_message.lower():
+                logger.warning("Caption too long, recreating post with shorter content...")
+                
+                # Удаляем временный файл
+                if media_path and os.path.exists(media_path):
+                    try:
+                        os.unlink(media_path)
+                    except:
+                        pass
+                
+                # Возвращаем специальный код для пересоздания поста
+                return "RECREATE_POST"
+            
+            # Удаляем временный файл в случае других ошибок
             if media_path and os.path.exists(media_path):
                 try:
                     os.unlink(media_path)
@@ -1053,9 +1070,52 @@ class IEEESpectrumScraper:
                 return False
             
             # 7. Публикация в Telegram с медиафайлом
-            success = await self.publish_to_telegram(post_content, media_path)
-            if not success:
-                logger.error("Failed to publish to Telegram")
+            max_retry_attempts = 3
+            retry_count = 0
+            
+            while retry_count < max_retry_attempts:
+                success = await self.publish_to_telegram(post_content, media_path)
+                
+                if success == True:
+                    break
+                elif success == "RECREATE_POST":
+                    retry_count += 1
+                    logger.info(f"Recreating post (attempt {retry_count}/{max_retry_attempts})")
+                    
+                    # Создаем новый пост с более коротким лимитом
+                    shorter_prompt = f"""
+                    Создай на основе этой статьи для Telegram канала об AI и Robotics технологиях очень короткий виральный пост длинной от 700 до 1000 символов(включая теги), вопрос в конце поста не нужен, количество тегов ограничить 3. Стиль информативный. Используй разметку, отступы и эmоджи(красивее когда эмоджи начинают новый абзац). Перепроверь в конце количество символов, получившеся подписи, от 500 до 800(включая теги). Вывести только сам пост.
+
+                    Заголовок статьи: {best_article['title']}
+                    
+                    Содержание статьи: {article_content[:1500]}
+                    """
+                    
+                    response = self.openai_client.chat.completions.create(
+                        model=self.ai_model,
+                        messages=[{"role": "user", "content": shorter_prompt}],
+                        max_tokens=self.max_tokens,
+                        temperature=self.temperature
+                    )
+                    
+                    post_content = response.choices[0].message.content.strip()
+                    post_content = post_content.replace('[ссылка]', best_article['link'])
+                    
+                    logger.info(f"Recreated post length: {len(post_content)} characters")
+                    
+                    # Скачиваем медиафайл заново
+                    if media_url:
+                        media_path = self.download_media(media_url)
+                        if not media_path:
+                            logger.warning("Failed to download media, will publish without it")
+                    
+                    continue
+                else:
+                    logger.error("Failed to publish to Telegram")
+                    return False
+            
+            if retry_count >= max_retry_attempts:
+                logger.error(f"Failed to publish after {max_retry_attempts} attempts")
                 return False
             
             # 8. Добавление URL в список опубликованных

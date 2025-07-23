@@ -1,144 +1,153 @@
 #!/usr/bin/env python3
 """
-Тест извлечения дат для IEEE Spectrum Scraper
-Test script for IEEE Spectrum date extraction
+Тест парсинга дат с IEEE Spectrum
 """
 
+import requests
+from bs4 import BeautifulSoup
+import re
+from datetime import date
 import sys
 import os
-from datetime import date, timedelta
 
-# Добавляем текущую директорию в путь для импорта
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Добавляем родительскую директорию в путь для импорта
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ieee_spectrum_scraper import IEEESpectrumScraper
 
 def test_ieee_date_extraction():
-    """Тест извлечения дат с IEEE Spectrum"""
+    """Тестирование извлечения дат с IEEE Spectrum"""
+    
+    scraper = IEEESpectrumScraper()
+    
+    # URL для тестирования
+    test_url = "https://spectrum.ieee.org/thunderforge-ai-wargames-dod"
+    
+    print(f"🔍 Тестирование парсинга дат с: {test_url}")
+    print("=" * 60)
+    
     try:
-        from ieee_spectrum_scraper import IEEESpectrumScraper
-        scraper = IEEESpectrumScraper()
+        # Получаем страницу
+        response = requests.get(test_url, headers=scraper.headers, timeout=30)
+        response.raise_for_status()
         
-        print("🧪 Тестирование извлечения дат IEEE Spectrum")
-        print("=" * 60)
+        soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Тестируем парсинг различных форматов дат IEEE
-        test_cases = [
-            ("20 Jul 2025", date(2025, 7, 20)),
-            ("17h", scraper.today),  # Относительное время
-            ("2d", scraper.today),   # Относительное время
-            ("30m", scraper.today),  # Относительное время
-            ("Today", scraper.today),
-            ("Yesterday", scraper.today - timedelta(days=1)),
-            ("2 hours ago", scraper.today),
-            ("1 day ago", scraper.today),
-            ("", None),
-            ("Invalid date", None),
+        print("📄 Анализ HTML структуры...")
+        
+        # Ищем все элементы с датами
+        date_selectors = [
+            '[class*="date"]',
+            'time',
+            '.date', '.time', '[data-testid="date"]',
+            '.article-date', '.post-date', '.published-date',
+            '.meta-date', '.timestamp', '.publish-date',
+            '.byline', '.author-info', '.meta'
         ]
         
-        passed = 0
-        total = len(test_cases)
+        found_dates = []
         
-        for i, (date_text, expected) in enumerate(test_cases, 1):
-            print(f"\n🔍 Тест {i}:")
-            print(f"   Дата: '{date_text}'")
+        for selector in date_selectors:
+            elements = soup.select(selector)
+            if elements:
+                print(f"\n✅ Найдены элементы с селектором '{selector}': {len(elements)}")
+                
+                for i, elem in enumerate(elements[:5]):  # Показываем первые 5
+                    text = elem.get_text(strip=True)
+                    datetime_attr = elem.get('datetime')
+                    
+                    print(f"  {i+1}. Текст: '{text}'")
+                    if datetime_attr:
+                        print(f"     datetime: '{datetime_attr}'")
+                    
+                    if text and any(char.isdigit() for char in text):
+                        found_dates.append({
+                            'text': text,
+                            'datetime': datetime_attr,
+                            'selector': selector
+                        })
+        
+        print(f"\n📅 Найдено потенциальных дат: {len(found_dates)}")
+        
+        # Тестируем парсинг каждой найденной даты
+        print("\n🔧 Тестирование парсинга дат:")
+        print("-" * 40)
+        
+        for i, date_info in enumerate(found_dates):
+            print(f"\n{i+1}. Текст: '{date_info['text']}'")
+            if date_info['datetime']:
+                print(f"   datetime: '{date_info['datetime']}'")
             
-            result = scraper.parse_article_date(date_text)
-            print(f"   Результат: {result}")
-            print(f"   Ожидалось: {expected}")
-            
-            if result == expected:
-                print("   ✅ Успешно")
-                passed += 1
+            # Парсим дату
+            parsed_date = scraper.parse_article_date(date_info['text'])
+            if parsed_date:
+                print(f"   ✅ Парсинг успешен: {parsed_date}")
+                print(f"   📅 Сегодня: {scraper.today}")
+                print(f"   🎯 Статья за сегодня: {parsed_date == scraper.today}")
             else:
-                print("   ❌ Ошибка")
+                print(f"   ❌ Парсинг не удался")
+            
+            # Также пробуем парсить datetime атрибут
+            if date_info['datetime']:
+                parsed_datetime = scraper.parse_article_date(date_info['datetime'])
+                if parsed_datetime:
+                    print(f"   ✅ datetime парсинг: {parsed_datetime}")
+                    print(f"   🎯 Статья за сегодня (datetime): {parsed_datetime == scraper.today}")
         
-        print("\n" + "=" * 60)
-        print(f"📊 Результаты: {passed}/{total} тестов прошли")
+        # Тестируем извлечение информации о статье
+        print(f"\n📰 Тестирование извлечения информации о статье:")
+        print("-" * 50)
         
-        if passed == total:
-            print("🎉 Все тесты парсинга дат прошли успешно!")
+        # Ищем основной контейнер статьи
+        article_selectors = [
+            'article',
+            '.article-content',
+            '.post-content',
+            '.entry-content',
+            '.content',
+            'main'
+        ]
+        
+        article_element = None
+        for selector in article_selectors:
+            elements = soup.select(selector)
+            if elements:
+                article_element = elements[0]
+                print(f"✅ Найден контейнер статьи: {selector}")
+                break
+        
+        if article_element:
+            # Извлекаем информацию о статье
+            article_info = scraper.extract_article_info(article_element, "AI")
+            if article_info:
+                print(f"✅ Заголовок: {article_info['title']}")
+                print(f"✅ Ссылка: {article_info['link']}")
+                print(f"✅ Автор: {article_info['author']}")
+                print(f"✅ Дата (текст): {article_info['date']}")
+                print(f"✅ Дата (парсинг): {article_info['parsed_date']}")
+                print(f"✅ Статья за сегодня: {article_info['parsed_date'] == scraper.today if article_info['parsed_date'] else False}")
+            else:
+                print("❌ Не удалось извлечь информацию о статье")
         else:
-            print("⚠️  Некоторые тесты не прошли")
+            print("❌ Не найден контейнер статьи")
         
-        return passed == total
+        # Поиск всех статей на странице AI
+        print(f"\n🔍 Тестирование поиска статей на странице AI:")
+        print("-" * 50)
+        
+        ai_articles = scraper.scrape_topic_page("https://spectrum.ieee.org/topic/artificial-intelligence", "AI")
+        print(f"✅ Найдено статей за сегодня: {len(ai_articles)}")
+        
+        for i, article in enumerate(ai_articles[:3]):
+            print(f"\n{i+1}. {article['title']}")
+            print(f"   Дата: {article['date']}")
+            print(f"   Парсинг: {article['parsed_date']}")
+            print(f"   Ссылка: {article['link']}")
         
     except Exception as e:
-        print(f"❌ Ошибка тестирования: {e}")
-        return False
-
-def test_actual_scraping():
-    """Тест реального скрапинга с IEEE Spectrum"""
-    try:
-        from ieee_spectrum_scraper import IEEESpectrumScraper
-        scraper = IEEESpectrumScraper()
-        
-        print("\n🔍 Тест реального скрапинга IEEE Spectrum:")
-        
-        # Скрапим статьи
-        articles = scraper.scrape_ieee_articles()
-        
-        print(f"📰 Найдено статей: {len(articles)}")
-        
-        if articles:
-            print("\n📋 Примеры статей:")
-            for i, article in enumerate(articles[:3], 1):
-                print(f"   {i}. {article['title'][:60]}...")
-                print(f"      Дата: '{article['date']}' -> {article['parsed_date']}")
-                print(f"      Тема: {article['topic']}")
-                print()
-            
-            # Проверяем, что есть статьи с датами
-            articles_with_dates = [a for a in articles if a['parsed_date']]
-            print(f"📅 Статей с распарсенными датами: {len(articles_with_dates)}")
-            
-            if articles_with_dates:
-                print("✅ Скрапинг работает корректно!")
-                return True
-            else:
-                print("⚠️  Не удалось распарсить даты")
-                return False
-        else:
-            print("❌ Статьи не найдены")
-            return False
-        
-    except Exception as e:
-        print(f"❌ Ошибка скрапинга: {e}")
-        return False
-
-def main():
-    """Главная функция тестирования"""
-    print("🧪 Тестирование извлечения дат IEEE Spectrum Scraper")
-    print("=" * 70)
-    
-    tests = [
-        ("Парсинг дат IEEE", test_ieee_date_extraction),
-        ("Реальный скрапинг", test_actual_scraping),
-    ]
-    
-    passed = 0
-    total = len(tests)
-    
-    for test_name, test_func in tests:
-        print(f"\n🔍 {test_name}...")
-        if test_func():
-            passed += 1
-        else:
-            print(f"   ❌ Тест '{test_name}' не прошел")
-    
-    print("\n" + "=" * 70)
-    print(f"📊 Результаты тестирования: {passed}/{total} тестов прошли")
-    
-    if passed == total:
-        print("🎉 Все тесты прошли успешно!")
-        print("✅ Извлечение дат работает корректно")
-        print("✅ Скрапер готов к работе с IEEE Spectrum")
-    else:
-        print("⚠️  Некоторые тесты не прошли")
-        print("❌ Проверьте функциональность извлечения дат")
-    
-    print("\n📝 Следующие шаги:")
-    print("1. Запустите: python run_ieee_scraper.py")
-    print("2. Проверьте логи в ieee_scraper.log")
-    print("3. Убедитесь, что даты извлекаются корректно")
+        print(f"❌ Ошибка при тестировании: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    main() 
+    test_ieee_date_extraction() 

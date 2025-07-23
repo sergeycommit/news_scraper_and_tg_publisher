@@ -1,173 +1,187 @@
 #!/usr/bin/env python3
 """
-Debug script для анализа структуры страницы IEEE Spectrum
+Детальный анализ HTML структуры IEEE Spectrum
 """
 
 import requests
 from bs4 import BeautifulSoup
+import sys
+import os
 import re
-import json
 
-def analyze_ieee_page(url, topic):
-    """Анализ структуры страницы IEEE Spectrum"""
-    print(f"🔍 Анализ страницы: {url}")
-    print("=" * 60)
+# Добавляем родительскую директорию в путь для импорта
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from ieee_spectrum_scraper import IEEESpectrumScraper
+
+def debug_ieee_structure():
+    """Детальный анализ HTML структуры IEEE Spectrum"""
     
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-        'Accept-Encoding': 'gzip, deflate',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1',
-    }
+    scraper = IEEESpectrumScraper()
+    
+    # URL для тестирования
+    test_url = "https://spectrum.ieee.org/thunderforge-ai-wargames-dod"
+    
+    print(f"🔍 Детальный анализ HTML структуры: {test_url}")
+    print("=" * 70)
     
     try:
-        response = requests.get(url, headers=headers, timeout=30)
+        # Получаем страницу
+        response = requests.get(test_url, headers=scraper.headers, timeout=30)
         response.raise_for_status()
         
         soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Ищем статьи
-        articles = soup.find_all('article')
-        print(f"📰 Найдено статей: {len(articles)}")
+        print("📄 Поиск всех элементов с датами...")
+        print("-" * 50)
         
-        if articles:
-            # Анализируем первую статью
-            first_article = articles[0]
-            print(f"\n🔍 Анализ первой статьи:")
+        # Ищем все элементы, которые могут содержать даты
+        all_elements_with_dates = []
+        
+        # Ищем по классам, содержащим "date"
+        for elem in soup.find_all(class_=lambda x: x and 'date' in x.lower()):
+            text = elem.get_text(strip=True)
+            if text and any(char.isdigit() for char in text):
+                all_elements_with_dates.append({
+                    'element': elem,
+                    'text': text,
+                    'class': elem.get('class'),
+                    'tag': elem.name,
+                    'datetime': elem.get('datetime')
+                })
+        
+        # Ищем time элементы
+        for elem in soup.find_all('time'):
+            text = elem.get_text(strip=True)
+            if text:
+                all_elements_with_dates.append({
+                    'element': elem,
+                    'text': text,
+                    'class': elem.get('class'),
+                    'tag': elem.name,
+                    'datetime': elem.get('datetime')
+                })
+        
+        # Ищем элементы с относительным временем (3h, 1h, etc.)
+        for elem in soup.find_all(text=True):
+            if elem.parent and any(char.isdigit() for char in elem) and any(char.isalpha() for char in elem):
+                text = elem.strip()
+                if re.match(r'\d+[hdm]', text):  # 3h, 1h, 2d, etc.
+                    all_elements_with_dates.append({
+                        'element': elem.parent,
+                        'text': text,
+                        'class': elem.parent.get('class'),
+                        'tag': elem.parent.name,
+                        'datetime': elem.parent.get('datetime')
+                    })
+        
+        print(f"📅 Найдено элементов с датами: {len(all_elements_with_dates)}")
+        
+        for i, date_info in enumerate(all_elements_with_dates[:10]):  # Показываем первые 10
+            print(f"\n{i+1}. Текст: '{date_info['text']}'")
+            print(f"   Тег: {date_info['tag']}")
+            print(f"   Класс: {date_info['class']}")
+            if date_info['datetime']:
+                print(f"   datetime: '{date_info['datetime']}'")
+            
+            # Показываем родительский элемент
+            parent = date_info['element'].parent
+            if parent:
+                print(f"   Родитель: {parent.name} (класс: {parent.get('class')})")
+        
+        print(f"\n🔍 Поиск статей на странице AI...")
+        print("-" * 50)
+        
+        # Получаем страницу AI
+        ai_response = requests.get("https://spectrum.ieee.org/topic/artificial-intelligence", headers=scraper.headers, timeout=30)
+        ai_response.raise_for_status()
+        ai_soup = BeautifulSoup(ai_response.content, 'html.parser')
+        
+        # Ищем все article элементы
+        articles = ai_soup.find_all('article')
+        print(f"📰 Найдено article элементов: {len(articles)}")
+        
+        # Анализируем первые 3 статьи
+        for i, article in enumerate(articles[:3]):
+            print(f"\n📄 Статья {i+1}:")
             
             # Ищем заголовок
-            title_selectors = ['h1', 'h2', 'h3', '.title', '.headline', '[data-testid="title"]']
-            title = None
-            for selector in title_selectors:
-                title_elem = first_article.select_one(selector)
-                if title_elem:
-                    title = title_elem.get_text(strip=True)
-                    print(f"   📝 Заголовок ({selector}): {title[:100]}...")
-                    break
+            title_elem = article.find(['h1', 'h2', 'h3', 'h4'])
+            if title_elem:
+                title = title_elem.get_text(strip=True)
+                print(f"   Заголовок: {title[:60]}...")
             
             # Ищем ссылку
-            link_elem = first_article.find('a')
-            if link_elem and link_elem.get('href'):
-                link = link_elem.get('href')
-                print(f"   🔗 Ссылка: {link}")
+            link_elem = article.find('a')
+            if link_elem:
+                href = link_elem.get('href')
+                if href:
+                    if not href.startswith('http'):
+                        href = f"https://spectrum.ieee.org{href}"
+                    print(f"   Ссылка: {href}")
             
-            # Анализируем скрипты в статье
-            scripts = first_article.find_all('script')
-            print(f"\n📜 Найдено скриптов: {len(scripts)}")
+            # Ищем дату в статье
+            date_found = False
+            for date_info in all_elements_with_dates:
+                # Проверяем, находится ли элемент даты внутри этой статьи
+                if date_info['element'] in article.descendants:
+                    print(f"   Дата: '{date_info['text']}' (найдена в статье)")
+                    date_found = True
+                    break
             
-            for i, script in enumerate(scripts):
-                script_content = script.string
-                if script_content:
-                    print(f"\n🔍 Скрипт {i+1}:")
-                    print(f"   Класс: {script.get('class', '')}")
-                    print(f"   Длина: {len(script_content)} символов")
-                    
-                    # Ищем JSON данные
-                    if 'window.__INITIAL_STATE__' in script_content:
-                        print(f"   ✅ Найден INITIAL_STATE")
-                        # Извлекаем JSON
-                        json_match = re.search(r'window\.__INITIAL_STATE__\s*=\s*({.*?});', script_content, re.DOTALL)
-                        if json_match:
-                            try:
-                                data = json.loads(json_match.group(1))
-                                print(f"   📊 JSON данные найдены")
-                                # Ищем дату в JSON
-                                if 'article' in data:
-                                    article_data = data['article']
-                                    if 'publishedDate' in article_data:
-                                        print(f"   📅 Дата в JSON: {article_data['publishedDate']}")
-                                    if 'date' in article_data:
-                                        print(f"   📅 Дата в JSON: {article_data['date']}")
-                            except json.JSONDecodeError:
-                                print(f"   ❌ Ошибка парсинга JSON")
-                    
-                    # Ищем другие паттерны с датами
-                    date_patterns = [
-                        r'"publishedDate"\s*:\s*"([^"]+)"',
-                        r'"date"\s*:\s*"([^"]+)"',
-                        r'"timestamp"\s*:\s*"([^"]+)"',
-                        r'"createdAt"\s*:\s*"([^"]+)"',
-                        r'"updatedAt"\s*:\s*"([^"]+)"'
-                    ]
-                    
-                    for pattern in date_patterns:
-                        matches = re.findall(pattern, script_content)
-                        if matches:
-                            print(f"   📅 Найдены даты ({pattern}): {matches[:3]}")
+            if not date_found:
+                print(f"   Дата: не найдена")
             
-            # Ищем дату в обычных элементах
-            print(f"\n📅 Поиск даты в HTML элементах:")
+            # Ищем дату в самой статье
+            article_dates = []
+            for elem in article.find_all(class_=lambda x: x and 'date' in x.lower()):
+                text = elem.get_text(strip=True)
+                if text and any(char.isdigit() for char in text):
+                    article_dates.append(text)
             
-            # Расширенные селекторы для дат
-            date_selectors = [
-                'time', '.date', '.time', '[data-testid="date"]',
-                '.article-date', '.post-date', '.published-date',
-                '.meta-date', '.timestamp', '.publish-date',
-                '.byline', '.author-info', '.meta',
-                '[class*="date"]', '[class*="time"]', '[class*="published"]'
-            ]
+            for elem in article.find_all('time'):
+                text = elem.get_text(strip=True)
+                if text:
+                    article_dates.append(text)
             
-            for selector in date_selectors:
-                date_elements = first_article.select(selector)
-                if date_elements:
-                    for elem in date_elements:
-                        text = elem.get_text(strip=True)
-                        datetime_attr = elem.get('datetime')
-                        if text or datetime_attr:
-                            print(f"   ✅ Найдена дата ({selector}): text='{text}' datetime='{datetime_attr}'")
-            
-            # Ищем в тексте статьи
-            article_text = first_article.get_text()
-            date_patterns = [
-                r'\d{1,2}\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{4}',
-                r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},?\s+\d{4}',
-                r'\d{4}-\d{1,2}-\d{1,2}',
-                r'\d{1,2}/\d{1,2}/\d{4}',
-                r'(Today|Yesterday)',
-                r'\d+\s+(hour|day|minute)s?\s+ago'
-            ]
-            
-            found_dates = []
-            for pattern in date_patterns:
-                matches = re.findall(pattern, article_text, re.IGNORECASE)
-                if matches:
-                    found_dates.extend(matches)
-            
-            if found_dates:
-                print(f"   ✅ Найдены даты в тексте: {found_dates[:3]}")
+            if article_dates:
+                print(f"   Даты в статье: {article_dates}")
             else:
-                print(f"   ❌ Даты не найдены в тексте")
-            
-            # Анализируем все атрибуты элементов
-            print(f"\n🔍 Анализ всех элементов с датами:")
-            for elem in first_article.find_all():
-                for attr_name, attr_value in elem.attrs.items():
-                    if isinstance(attr_value, str) and any(char.isdigit() for char in attr_value):
-                        if any(date_word in attr_value.lower() for date_word in ['date', 'time', 'published', 'created']):
-                            print(f"   {elem.name}.{attr_name}='{attr_value}'")
+                print(f"   Даты в статье: не найдены")
         
-        return True
+        # Тестируем извлечение информации о конкретной статье
+        print(f"\n🔍 Тестирование извлечения информации о статье Thunderforge...")
+        print("-" * 60)
+        
+        # Ищем статью с заголовком "Thunderforge"
+        thunderforge_article = None
+        for article in articles:
+            title_elem = article.find(['h1', 'h2', 'h3', 'h4'])
+            if title_elem and 'Thunderforge' in title_elem.get_text():
+                thunderforge_article = article
+                break
+        
+        if thunderforge_article:
+            print("✅ Найдена статья Thunderforge")
+            
+            # Извлекаем информацию
+            article_info = scraper.extract_article_info(thunderforge_article, "AI")
+            if article_info:
+                print(f"✅ Заголовок: {article_info['title']}")
+                print(f"✅ Ссылка: {article_info['link']}")
+                print(f"✅ Автор: {article_info['author']}")
+                print(f"✅ Дата (текст): '{article_info['date']}'")
+                print(f"✅ Дата (парсинг): {article_info['parsed_date']}")
+                print(f"✅ Статья за сегодня: {article_info['parsed_date'] == scraper.today if article_info['parsed_date'] else False}")
+            else:
+                print("❌ Не удалось извлечь информацию о статье")
+        else:
+            print("❌ Статья Thunderforge не найдена в списке статей")
         
     except Exception as e:
-        print(f"❌ Ошибка анализа: {e}")
-        return False
-
-def main():
-    """Главная функция"""
-    print("🔍 Анализ структуры IEEE Spectrum")
-    print("=" * 60)
-    
-    urls = [
-        ("AI", "https://spectrum.ieee.org/topic/artificial-intelligence"),
-        ("Robotics", "https://spectrum.ieee.org/topic/robotics")
-    ]
-    
-    for topic, url in urls:
-        print(f"\n{'='*20} {topic} {'='*20}")
-        analyze_ieee_page(url, topic)
-        print()
+        print(f"❌ Ошибка при анализе: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    main() 
+    debug_ieee_structure() 
