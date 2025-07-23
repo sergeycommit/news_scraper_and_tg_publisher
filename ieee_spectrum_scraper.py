@@ -1070,7 +1070,7 @@ class IEEESpectrumScraper:
                 return False
             
             # 7. Публикация в Telegram с медиафайлом
-            max_retry_attempts = 3
+            max_retry_attempts = 10
             retry_count = 0
             
             while retry_count < max_retry_attempts:
