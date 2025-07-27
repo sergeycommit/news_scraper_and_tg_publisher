@@ -42,6 +42,7 @@ class IEEESpectrumScraper:
         self.ai_model = os.getenv('AI_MODEL', 'google/gemini-pro')
         self.max_tokens = int(os.getenv('MAX_TOKENS', '4000'))
         self.temperature = float(os.getenv('TEMPERATURE', '0.7'))
+        self.prompt = os.getenv('PROMPT')
         
         # Конфигурация Telegram
         self.telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -464,7 +465,7 @@ class IEEESpectrumScraper:
             Критерии выбора:
             - Потенциал виральности
             - Интерес для широкой аудитории
-            - Технологическая значимость
+            - продуктовый
 
             Статьи:
             {articles_text}
@@ -826,11 +827,11 @@ class IEEESpectrumScraper:
         """Создание вирального поста для Telegram с помощью AI"""
         try:
             prompt = f"""
-            Создай на основе этой статьи для Telegram канала об AI и Robotics технологиях виральный пост длинной длинной от 700 до 1024 символов(включая теги), вопрос в конце поста не нужен, количество тегов ограничить 5. Стиль информативный. Используй разметку, отступы и эmоджи. Перепроверь в конце количество символов, получившеся подписи, от 700 до 1024(включая теги). Вывести только сам пост.
-
+            {self.prompt}
+            
             Заголовок статьи: {article_title}
             
-            Содержание статьи: {article_content[:2900]}
+            Содержание статьи: {article_content}
             """
             
             response = self.openai_client.chat.completions.create(
@@ -1084,11 +1085,11 @@ class IEEESpectrumScraper:
                     
                     # Создаем новый пост с более коротким лимитом
                     shorter_prompt = f"""
-                    Создай на основе этой статьи для Telegram канала об AI и Robotics технологиях очень короткий виральный пост длинной от 700 до 1000 символов(включая теги), вопрос в конце поста не нужен, количество тегов ограничить 3. Стиль поста информативный, полезный. Используй разметку, отступы и эmоджи(красивее когда эмоджи начинают новый абзац). Перепроверь в конце количество символов, получившейся подписи, от 500 до 1000(включая теги). Вывести только сам пост.
-
+                    {self.prompt}
+                    
                     Заголовок статьи: {best_article['title']}
                     
-                    Содержание статьи: {article_content[:1500]}
+                    Содержание статьи: {article_content}
                     """
                     
                     response = self.openai_client.chat.completions.create(
