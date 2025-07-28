@@ -53,9 +53,10 @@ class IEEESpectrumScraper:
         self.ai_url = 'https://spectrum.ieee.org/topic/artificial-intelligence'
         self.robotics_url = 'https://spectrum.ieee.org/topic/robotics'
         
-        # Даты для фильтрации (сегодня и вчера)
+        # Даты для фильтрации (последние 3 дня)
         self.today = date.today()
         self.yesterday = self.today - timedelta(days=1)
+        self.day_before_yesterday = self.today - timedelta(days=2)
         
         # Создаем папку для JSON файлов
         self.json_folder = 'ieee_articles_archive'
@@ -82,7 +83,7 @@ class IEEESpectrumScraper:
         
         logger.info("IEEE Spectrum Scraper initialized successfully")
         logger.info(f"Loaded {len(self.published_urls)} previously published URLs")
-        logger.info(f"Filtering articles for last 2 days: {self.yesterday} to {self.today}")
+        logger.info(f"Filtering articles for last 3 days: {self.day_before_yesterday} to {self.today}")
     
     def create_json_folder(self):
         """Создание папки для JSON файлов"""
@@ -216,11 +217,11 @@ class IEEESpectrumScraper:
             return None
     
     def is_article_from_recent_days(self, article_date):
-        """Проверка, что статья за последние 2 дня (сегодня или вчера)"""
+        """Проверка, что статья за последние 3 дня (сегодня, вчера или позавчера)"""
         if not article_date:
             return False
         
-        return article_date == self.today or article_date == self.yesterday
+        return article_date == self.today or article_date == self.yesterday or article_date == self.day_before_yesterday
     
     def scrape_ieee_articles(self):
         """Скрапинг статей с IEEE Spectrum по тегам AI и Robotics"""

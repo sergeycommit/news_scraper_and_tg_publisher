@@ -66,7 +66,7 @@ def test_date_parsing():
         return False
 
 def test_recent_days_filtering():
-    """Тест фильтрации за последние 2 дня"""
+    """Тест фильтрации за последние 3 дня"""
     try:
         from ieee_spectrum_scraper import IEEESpectrumScraper
         scraper = IEEESpectrumScraper()
@@ -86,6 +86,12 @@ def test_recent_days_filtering():
                 'topic': 'AI'
             },
             {
+                'title': 'Day Before Yesterday Article',
+                'date': 'Day Before Yesterday',
+                'parsed_date': scraper.today - timedelta(days=2),
+                'topic': 'AI'
+            },
+            {
                 'title': 'Old Article',
                 'date': '20 Jul 2025',
                 'parsed_date': date(2025, 7, 20),
@@ -99,7 +105,7 @@ def test_recent_days_filtering():
             }
         ]
         
-        print("\n🔍 Тест фильтрации за последние 2 дня:")
+        print("\n🔍 Тест фильтрации за последние 3 дня:")
         print(f"Сегодняшняя дата: {scraper.today}")
         
         recent_articles = []
@@ -110,9 +116,9 @@ def test_recent_days_filtering():
             else:
                 print(f"   ❌ Старая: {article['title']} ({article['date']})")
         
-        print(f"\n📊 Найдено статей за последние 2 дня: {len(recent_articles)}")
+        print(f"\n📊 Найдено статей за последние 3 дня: {len(recent_articles)}")
         
-        expected_recent = 3  # "Today Article 1", "Today Article 2" и "Yesterday Article"
+        expected_recent = 4  # "Today Article 1", "Today Article 2", "Yesterday Article" и "Day Before Yesterday Article"
         if len(recent_articles) == expected_recent:
             print("✅ Фильтрация работает корректно!")
             return True
@@ -155,7 +161,7 @@ def main():
     tests = [
         ("Инициализация скрапера", test_scraper_initialization),
         ("Парсинг дат", test_date_parsing),
-        ("Фильтрация за последние 2 дня", test_recent_days_filtering),
+        ("Фильтрация за последние 3 дня", test_recent_days_filtering),
     ]
     
     passed = 0
@@ -174,7 +180,7 @@ def main():
     if passed == total:
         print("🎉 Все тесты прошли успешно!")
         print("✅ Фильтрация по дате работает корректно")
-        print("✅ Скрапер будет обрабатывать статьи за последние 2 дня")
+        print("✅ Скрапер будет обрабатывать статьи за последние 3 дня")
     else:
         print("⚠️  Некоторые тесты не прошли")
         print("❌ Проверьте функциональность фильтрации по дате")
@@ -182,7 +188,7 @@ def main():
     print("\n📝 Следующие шаги:")
     print("1. Запустите: python run_ieee_scraper.py")
     print("2. Проверьте логи в ieee_scraper.log")
-    print("3. Убедитесь, что обрабатываются статьи за последние 2 дня")
+    print("3. Убедитесь, что обрабатываются статьи за последние 3 дня")
 
 if __name__ == "__main__":
     main() 
