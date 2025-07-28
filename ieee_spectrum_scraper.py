@@ -8,7 +8,7 @@ import os
 import logging
 import requests
 import feedparser
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -53,8 +53,9 @@ class IEEESpectrumScraper:
         self.ai_url = 'https://spectrum.ieee.org/topic/artificial-intelligence'
         self.robotics_url = 'https://spectrum.ieee.org/topic/robotics'
         
-        # Сегодняшняя дата для фильтрации
+        # Даты для фильтрации (сегодня и вчера)
         self.today = date.today()
+        self.yesterday = self.today - timedelta(days=1)
         
         # Создаем папку для JSON файлов
         self.json_folder = 'ieee_articles_archive'
@@ -81,7 +82,7 @@ class IEEESpectrumScraper:
         
         logger.info("IEEE Spectrum Scraper initialized successfully")
         logger.info(f"Loaded {len(self.published_urls)} previously published URLs")
-        logger.info(f"Filtering articles for today's date: {self.today}")
+        logger.info(f"Filtering articles for last 2 days: {self.yesterday} to {self.today}")
     
     def create_json_folder(self):
         """Создание папки для JSON файлов"""
@@ -214,12 +215,12 @@ class IEEESpectrumScraper:
             logger.error(f"Error parsing date '{date_text}': {e}")
             return None
     
-    def is_article_from_today(self, article_date):
-        """Проверка, что статья за сегодняшнюю дату"""
+    def is_article_from_recent_days(self, article_date):
+        """Проверка, что статья за последние 2 дня (сегодня или вчера)"""
         if not article_date:
             return False
         
-        return article_date == self.today
+        return article_date == self.today or article_date == self.yesterday
     
     def scrape_ieee_articles(self):
         """Скрапинг статей с IEEE Spectrum по тегам AI и Robotics"""
@@ -281,22 +282,22 @@ class IEEESpectrumScraper:
                 # Если не нашли по селекторам, ищем по структуре
                 elements = soup.find_all(['article', 'div'], class_=re.compile(r'article|post|content'))
             
-            for element in elements[:20]:  # Увеличиваем лимит для поиска сегодняшних статей
+            for element in elements[:20]:  # Увеличиваем лимит для поиска недавних статей
                 try:
                     article = self.extract_article_info(element, topic)
                     if article:
-                        # Проверяем, что статья за сегодня
-                        if article['parsed_date'] and self.is_article_from_today(article['parsed_date']):
+                        # Проверяем, что статья за последние 2 дня
+                        if article['parsed_date'] and self.is_article_from_recent_days(article['parsed_date']):
                             articles.append(article)
                             today_articles += 1
-                            logger.info(f"Found today's article: {article['title']} ({article['date']})")
+                            logger.info(f"Found recent article: {article['title']} ({article['date']})")
                         else:
                             logger.debug(f"Skipping old article: {article['title']} ({article['date']})")
                 except Exception as e:
                     logger.warning(f"Error extracting article info: {e}")
                     continue
             
-            logger.info(f"Extracted {len(articles)} today's articles from {topic} page (total found: {today_articles})")
+            logger.info(f"Extracted {len(articles)} recent articles from {topic} page (total found: {today_articles})")
             return articles
             
         except Exception as e:

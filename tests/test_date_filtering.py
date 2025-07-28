@@ -8,8 +8,8 @@ import sys
 import os
 from datetime import date, timedelta
 
-# Добавляем текущую директорию в путь для импорта
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# Добавляем родительскую директорию в путь для импорта
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 def test_date_parsing():
     """Тест парсинга дат"""
@@ -65,8 +65,8 @@ def test_date_parsing():
         print(f"❌ Ошибка тестирования: {e}")
         return False
 
-def test_today_filtering():
-    """Тест фильтрации по сегодняшней дате"""
+def test_recent_days_filtering():
+    """Тест фильтрации за последние 2 дня"""
     try:
         from ieee_spectrum_scraper import IEEESpectrumScraper
         scraper = IEEESpectrumScraper()
@@ -99,25 +99,25 @@ def test_today_filtering():
             }
         ]
         
-        print("\n🔍 Тест фильтрации по сегодняшней дате:")
+        print("\n🔍 Тест фильтрации за последние 2 дня:")
         print(f"Сегодняшняя дата: {scraper.today}")
         
-        today_articles = []
+        recent_articles = []
         for article in test_articles:
-            if scraper.is_article_from_today(article['parsed_date']):
-                today_articles.append(article)
-                print(f"   ✅ Сегодня: {article['title']} ({article['date']})")
+            if scraper.is_article_from_recent_days(article['parsed_date']):
+                recent_articles.append(article)
+                print(f"   ✅ Недавняя: {article['title']} ({article['date']})")
             else:
-                print(f"   ❌ Не сегодня: {article['title']} ({article['date']})")
+                print(f"   ❌ Старая: {article['title']} ({article['date']})")
         
-        print(f"\n📊 Найдено статей за сегодня: {len(today_articles)}")
+        print(f"\n📊 Найдено статей за последние 2 дня: {len(recent_articles)}")
         
-        expected_today = 2  # "Today Article 1" и "Today Article 2"
-        if len(today_articles) == expected_today:
+        expected_recent = 3  # "Today Article 1", "Today Article 2" и "Yesterday Article"
+        if len(recent_articles) == expected_recent:
             print("✅ Фильтрация работает корректно!")
             return True
         else:
-            print(f"❌ Ожидалось {expected_today} статей, найдено {len(today_articles)}")
+            print(f"❌ Ожидалось {expected_recent} статей, найдено {len(recent_articles)}")
             return False
         
     except Exception as e:
@@ -155,7 +155,7 @@ def main():
     tests = [
         ("Инициализация скрапера", test_scraper_initialization),
         ("Парсинг дат", test_date_parsing),
-        ("Фильтрация по сегодняшней дате", test_today_filtering),
+        ("Фильтрация за последние 2 дня", test_recent_days_filtering),
     ]
     
     passed = 0
@@ -174,7 +174,7 @@ def main():
     if passed == total:
         print("🎉 Все тесты прошли успешно!")
         print("✅ Фильтрация по дате работает корректно")
-        print("✅ Скрапер будет обрабатывать только сегодняшние статьи")
+        print("✅ Скрапер будет обрабатывать статьи за последние 2 дня")
     else:
         print("⚠️  Некоторые тесты не прошли")
         print("❌ Проверьте функциональность фильтрации по дате")
@@ -182,7 +182,7 @@ def main():
     print("\n📝 Следующие шаги:")
     print("1. Запустите: python run_ieee_scraper.py")
     print("2. Проверьте логи в ieee_scraper.log")
-    print("3. Убедитесь, что обрабатываются только сегодняшние статьи")
+    print("3. Убедитесь, что обрабатываются статьи за последние 2 дня")
 
 if __name__ == "__main__":
     main() 
