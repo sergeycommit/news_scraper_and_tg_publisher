@@ -1,28 +1,27 @@
-# News Scraper & Telegram Publisher
+# ZDNet Scraper & Telegram Publisher
 
-🤖 Автоматические скраперы статей с публикацией в Telegram канал
+🤖 Автоматический скрапер статей ZDNet с публикацией в Telegram канал
 
 ## Описание
 
-Этот проект содержит два автоматических скрапера:
+Этот проект содержит автоматический скрапер ZDNet:
 
-### 1. TechCrunch Scraper
-- Скрапит RSS ленту TechCrunch
-- Выбирает самую интересную статью с помощью AI
-- Извлекает изображения и создает виральные посты
-
-### 2. IEEE Spectrum Scraper ⭐ **НОВЫЙ**
-- Скрапит статьи с IEEE Spectrum по темам AI и Robotics
-- Извлекает медиафайлы (изображения и видео)
-- Создает виральные посты с прикрепленными файлами
+### ZDNet Scraper ⭐ **ОСНОВНОЙ СКРАПЕР**
+- Скрапит статьи с ZDNet по темам AI и Robotics
+- Автоматически выбирает лучшие статьи с помощью AI
+- Извлекает высококачественные изображения
+- Создает виральные посты на русском языке
+- Публикует в Telegram канал с медиафайлами
 
 ## Особенности
 
-- 🎯 **Фильтрация по темам** - IEEE скрапер работает только с AI и Robotics
-- 🖼️ **Автоматическое извлечение медиа** - изображения и видео
-- 🤖 **AI-выбор контента** - использует Gemini для выбора лучших статей
-- ✍️ **AI-генерация постов** - создает виральные посты с эмодзи
+### ZDNet Scraper ⭐ **ОСНОВНОЙ**
+- 🧠 **ИИ-анализ контента** - использует AI для выбора лучших статей
+- 📊 **Множественные темы** - анализирует AI и Robotics разделы
+- 🎯 **Умная фильтрация** - исключает служебные страницы и дубликаты
+- 🤖 **AI-генерация постов** - создает виральные посты на русском языке
 - 📱 **Оптимизация для Telegram** - посты адаптированы для мобильного просмотра
+- 🖼️ **Высококачественные изображения** - автоматически выбирает лучшие медиафайлы
 - 🎨 **Правильное форматирование** - автоматическая конвертация Markdown в HTML
 - 📊 **Подробное логирование** - все этапы процесса записываются в лог
 - 💾 **Архивирование** - каждая статья сохраняется в JSON с метаданными
@@ -31,27 +30,17 @@
 
 ## Быстрый старт
 
-### TechCrunch Scraper
+### ZDNet Scraper ⭐ **ОСНОВНОЙ**
 ```bash
-# Запуск
-python run_scraper.py
+# Запуск скрапера
+python run_zdnet_scraper.py
 
 # Управление URL
-python manage_published_urls.py help
-```
-
-### IEEE Spectrum Scraper
-```bash
-# Запуск
-python run_ieee_scraper.py
-
-# Управление URL
-python manage_ieee_urls.py help
+python manage_zdnet_urls.py help
 ```
 
 Подробные инструкции:
-- [QUICK_START.md](QUICK_START.md) - для TechCrunch
-- [QUICK_START_IEEE.md](QUICK_START_IEEE.md) - для IEEE Spectrum
+- [QUICK_START_ZDNET.md](QUICK_START_ZDNET.md) - для ZDNet
 
 ## Требования
 
@@ -108,11 +97,20 @@ TELEGRAM_CHANNEL_ID=@your_channel_username_here
 AI_MODEL=google/gemini-pro
 MAX_TOKENS=4000
 TEMPERATURE=0.7
+
+# RSS Feeds for AI Article Selection
+# The scraper will automatically use multiple TechCrunch RSS feeds
+# to find the best AI-related articles
 ```
 
 ## Использование
 
 ### Ручной запуск
+
+**AI TechCrunch (ИИ-скрапер):**
+```bash
+python run_ai_scraper.py
+```
 
 **TechCrunch:**
 ```bash
@@ -126,6 +124,11 @@ python run_ieee_scraper.py
 
 ### Автоматический запуск (cron)
 
+**AI TechCrunch (каждый день в 8:00):**
+```bash
+0 8 * * * cd /path/to/news_scraper_and_tg_publisher && python run_ai_scraper.py
+```
+
 **TechCrunch (каждый день в 9:00):**
 ```bash
 0 9 * * * cd /path/to/news_scraper_and_tg_publisher && python run_scraper.py
@@ -138,7 +141,7 @@ python run_ieee_scraper.py
 
 ## Защита от дублирования
 
-Оба скрапера автоматически отслеживают уже опубликованные статьи:
+Все скраперы автоматически отслеживают уже опубликованные статьи:
 
 - 📝 **Автоматическое отслеживание** - каждый опубликованный URL сохраняется в JSON файл
 - 🔍 **Фильтрация** - при каждом запуске исключаются уже опубликованные статьи
@@ -147,7 +150,7 @@ python run_ieee_scraper.py
 
 ### Управление списками URL
 
-**TechCrunch:**
+**AI TechCrunch & TechCrunch:**
 ```bash
 python manage_published_urls.py list
 python manage_published_urls.py clear
@@ -163,25 +166,26 @@ python manage_ieee_urls.py clear
 
 ```
 news_scraper_and_tg_publisher/
-├── techcrunch_scraper.py    # TechCrunch скрапер
-├── run_scraper.py          # Запуск TechCrunch
+├── techcrunch_scraper.py    # AI TechCrunch скрапер ⭐
+├── run_ai_scraper.py       # Запуск AI TechCrunch ⭐
+├── run_scraper.py          # Запуск обычного TechCrunch
 ├── manage_published_urls.py # Управление TechCrunch URL
-├── ieee_spectrum_scraper.py # IEEE Spectrum скрапер ⭐
-├── run_ieee_scraper.py     # Запуск IEEE Spectrum ⭐
-├── manage_ieee_urls.py     # Управление IEEE URL ⭐
+├── ieee_spectrum_scraper.py # IEEE Spectrum скрапер
+├── run_ieee_scraper.py     # Запуск IEEE Spectrum
+├── manage_ieee_urls.py     # Управление IEEE URL
 ├── requirements.txt        # Зависимости Python
 ├── config.env.example      # Пример конфигурации
 ├── .env                    # Ваша конфигурация (создать)
 ├── .gitignore             # Исключения для git
 ├── scraper.log            # Логи TechCrunch
-├── ieee_scraper.log       # Логи IEEE Spectrum ⭐
+├── ieee_scraper.log       # Логи IEEE Spectrum
 ├── published_urls.json    # Список TechCrunch URL
-├── ieee_published_urls.json # Список IEEE URL ⭐
+├── ieee_published_urls.json # Список IEEE URL
 ├── articles_archive/      # Архив TechCrunch статей
-├── ieee_articles_archive/ # Архив IEEE статей ⭐
+├── ieee_articles_archive/ # Архив IEEE статей
 ├── QUICK_START.md         # Быстрый старт TechCrunch
-├── QUICK_START_IEEE.md    # Быстрый старт IEEE ⭐
-├── README_IEEE.md         # Документация IEEE ⭐
+├── QUICK_START_IEEE.md    # Быстрый старт IEEE
+├── README_IEEE.md         # Документация IEEE
 └── README.md              # Этот файл
 ```
 
@@ -189,13 +193,13 @@ news_scraper_and_tg_publisher/
 
 Каждый скрапер ведет отдельные логи:
 
-- **TechCrunch:** `scraper.log`
+- **AI TechCrunch:** `scraper.log`
 - **IEEE Spectrum:** `ieee_scraper.log`
 
 Логи включают:
 - Процесс скрапинга статей
 - Фильтрацию уже опубликованных статей
-- Выбор статьи AI
+- ИИ-выбор статьи
 - Скрапинг контента и медиафайлов
 - Создание поста
 - Публикацию в Telegram
@@ -205,6 +209,7 @@ news_scraper_and_tg_publisher/
 
 Каждая обработанная статья сохраняется в JSON файл:
 
+- **AI TechCrunch:** `articles_archive/ai_article_YYYYMMDD_HHMMSS.json`
 - **TechCrunch:** `articles_archive/article_YYYYMMDD_HHMMSS.json`
 - **IEEE Spectrum:** `ieee_articles_archive/ieee_article_YYYYMMDD_HHMMSS.json`
 
@@ -214,6 +219,7 @@ news_scraper_and_tg_publisher/
 - Созданный пост
 - URL медиафайла (если найдено)
 - Статус публикации
+- Флаг ИИ-выбора (для AI TechCrunch)
 
 ## Настройка AI
 
@@ -222,6 +228,18 @@ news_scraper_and_tg_publisher/
 - `AI_MODEL`: Модель для использования (по умолчанию: google/gemini-pro)
 - `MAX_TOKENS`: Максимальное количество токенов для ответа
 - `TEMPERATURE`: Креативность ответов (0.0 - 1.0)
+
+## RSS ленты для AI TechCrunch
+
+ИИ-скрапер автоматически анализирует следующие RSS ленты TechCrunch:
+
+1. **Основная лента** - `https://techcrunch.com/feed/`
+2. **ИИ категория** - `https://techcrunch.com/category/artificial-intelligence/feed/`
+3. **Startups** - `https://techcrunch.com/category/startups/feed/`
+4. **Enterprise** - `https://techcrunch.com/category/enterprise/feed/`
+5. **Security** - `https://techcrunch.com/category/security/feed/`
+6. **Fintech** - `https://techcrunch.com/category/fintech/feed/`
+7. **Transportation** - `https://techcrunch.com/category/transportation/feed/`
 
 ## Устранение неполадок
 
@@ -236,6 +254,11 @@ news_scraper_and_tg_publisher/
 - Это нормально, если все статьи уже были опубликованы
 - Подождите следующего обновления сайта
 - Или очистите список опубликованных URL
+
+**Ошибка "No suitable AI article found" (AI TechCrunch)**
+- ИИ не нашел подходящих статей об ИИ
+- Это может быть временным явлением
+- Попробуйте запустить позже
 
 **Ошибка "OpenRouter API"**
 - Проверьте правильность API ключа
