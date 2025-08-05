@@ -53,10 +53,9 @@ class ZDNetScraper:
         self.ai_url = 'https://www.zdnet.com/topic/artificial-intelligence/'
         self.robotics_url = 'https://www.zdnet.com/topic/robotics/'
         
-        # Даты для фильтрации (последние 3 дня)
+        # Даты для фильтрации (только сегодня и вчера)
         self.today = date.today()
         self.yesterday = self.today - timedelta(days=1)
-        self.day_before_yesterday = self.today - timedelta(days=2)
         
         # Создаем папку для JSON файлов
         self.json_folder = 'zdnet_articles_archive'
@@ -85,7 +84,7 @@ class ZDNetScraper:
         
         logger.info("ZDNet Scraper initialized successfully")
         logger.info(f"Loaded {len(self.published_urls)} previously published URLs")
-        logger.info(f"Filtering articles for last 3 days: {self.day_before_yesterday} to {self.today}")
+        logger.info(f"Filtering articles for today and yesterday: {self.yesterday} to {self.today}")
     
     def create_json_folder(self):
         """Создание папки для JSON файлов"""
@@ -215,9 +214,37 @@ class ZDNetScraper:
             logger.error(f"Error parsing date '{date_text}': {e}")
             return self.today
     
+    def extract_date_from_url(self, url):
+        """Извлечение даты из URL статьи"""
+        try:
+            # Паттерны для поиска дат в URL
+            patterns = [
+                r'/(\d{4})/(\d{1,2})/(\d{1,2})/',  # /2025/08/05/
+                r'(\d{4})-(\d{1,2})-(\d{1,2})',    # 2025-08-05
+                r'(\d{1,2})-(\d{1,2})-(\d{4})',    # 08-05-2025
+            ]
+            
+            for pattern in patterns:
+                match = re.search(pattern, url)
+                if match:
+                    groups = match.groups()
+                    if len(groups) == 3:
+                        if len(groups[0]) == 4:  # YYYY-MM-DD
+                            year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
+                        else:  # MM-DD-YYYY
+                            month, day, year = int(groups[0]), int(groups[1]), int(groups[2])
+                        
+                        return date(year, month, day)
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error extracting date from URL: {e}")
+            return None
+    
     def is_article_from_recent_days(self, article_date):
-        """Проверка, что статья из последних 3 дней"""
-        return article_date >= self.day_before_yesterday
+        """Проверка, что статья из сегодня или вчера"""
+        return article_date >= self.yesterday
     
     def scrape_zdnet_articles(self):
         """Основной метод скрапинга статей с ZDNet"""
@@ -310,10 +337,39 @@ class ZDNetScraper:
             if len(title) < 10:
                 return None
             
-            # Поиск даты
+            # Поиск даты - расширенный поиск
+            date_text = ""
+            
+            # 1. Поиск по стандартным селекторам
             date_element = element.find(['time', 'span', 'div'], 
                                      class_=re.compile(r'date|time|published|updated'))
-            date_text = date_element.get_text(strip=True) if date_element else ""
+            if date_element:
+                date_text = date_element.get_text(strip=True)
+            
+            # 2. Поиск по атрибутам
+            if not date_text:
+                date_element = element.find(['time', 'span', 'div'], 
+                                         attrs={'datetime': True})
+                if date_element:
+                    date_text = date_element.get('datetime', '')
+            
+            # 3. Поиск по тексту с датами
+            if not date_text:
+                # Ищем любой текст, содержащий дату
+                all_text = element.get_text()
+                date_patterns = [
+                    r'\b\d{1,2}\s+(hour|hours|minute|minutes|day|days)\s+ago\b',
+                    r'\b\d{1,2}:\d{2}\s+(AM|PM)\s+\w+\s+\d{1,2},?\s+\d{4}\b',
+                    r'\b\w+\s+\d{1,2},?\s+\d{4}\b',
+                    r'\b\d{1,2}/\d{1,2}/\d{4}\b',
+                    r'\b\d{4}-\d{1,2}-\d{1,2}\b'
+                ]
+                
+                for pattern in date_patterns:
+                    match = re.search(pattern, all_text, re.IGNORECASE)
+                    if match:
+                        date_text = match.group(0)
+                        break
             
             # Поиск описания
             desc_element = element.find(['p', 'div'], 
@@ -323,11 +379,17 @@ class ZDNetScraper:
             # Парсинг даты
             article_date = self.parse_article_date(date_text)
             
+            # Дополнительная проверка даты из URL (если есть паттерн даты в URL)
+            url_date = self.extract_date_from_url(article_url)
+            if url_date:
+                article_date = url_date
+            
             # Проверка, что статья из последних дней
             if not self.is_article_from_recent_days(article_date):
+                logger.info(f"Article too old: {title[:50]}... (date: {article_date})")
                 return None
             
-            logger.info(f"Found article: {title[:50]}... -> {article_url}")
+            logger.info(f"Found article: {title[:50]}... -> {article_url} (date: {article_date})")
             
             return {
                 'title': title,
@@ -359,13 +421,21 @@ class ZDNetScraper:
                     if '/article/' in href or '/news/' in href or '/story/' in href:
                         title = link.get_text(strip=True)
                         if title and len(title) > 10:  # Минимальная длина заголовка
-                            articles.append({
-                                'title': title,
-                                'url': href,
-                                'date': self.today,  # Используем сегодняшнюю дату
-                                'description': "",
-                                'topic': topic
-                            })
+                            
+                            # Извлекаем дату из URL
+                            article_date = self.extract_date_from_url(href)
+                            if not article_date:
+                                article_date = self.today  # Используем сегодняшнюю дату как fallback
+                            
+                            # Проверяем, что статья из последних дней
+                            if self.is_article_from_recent_days(article_date):
+                                articles.append({
+                                    'title': title,
+                                    'url': href,
+                                    'date': article_date,
+                                    'description': "",
+                                    'topic': topic
+                                })
                 
                 except Exception as e:
                     continue
