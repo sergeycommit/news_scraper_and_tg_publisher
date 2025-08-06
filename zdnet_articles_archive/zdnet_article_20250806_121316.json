@@ -1,0 +1,10 @@
+{
+  "title": "OpenAI returns to its open-source roots with new open-weight AI models, and it's a big deal",
+  "url": "https://www.zdnet.com/article/openai-returns-to-its-open-source-roots-with-new-open-weight-ai-models-and-its-a-big-deal/",
+  "date": "2025-08-06",
+  "topic": "AI",
+  "description": "",
+  "post_content": "🔥 \"OpenAI\" шокировала всех: впервые за 5 лет выпустила открытые AI-модели!\n\nКомпания представила две модели с открытыми весами:\n• **gpt-oss-120b** — для мощных серверов (нужно 60GB VRAM)\n• **gpt-oss-20b** — запускается даже на ноутбуках (16GB памяти)\n\n**Что изменилось?** 🤔\n\"OpenAI\" признала: \"мы были не на той стороне истории\". Успех китайской \"DeepSeek\" заставил пересмотреть стратегию закрытости.\n\n**Реальность:**\n✅ Можно скачать с \"Hugging Face\"/\"GitHub\"\n✅ Лицензия \"Apache 2.0\" — используй как хочешь\n⚠️ Высокий уровень галлюцинаций в ранних тестах\n❌ Обучающие данные всё ещё закрыты\n\nМодели показывают результаты близкие к \"o4-mini\", но пока только текст. Это попытка вернуть американское лидерство в open-source AI после провала \"Llama\".\n\n#OpenAI #ИИ #OpenSource #ChatGPT #AI #НейросетиРоссия\n\n🔗 <a href=\"https://www.zdnet.com/article/openai-returns-to-its-open-source-roots-with-new-open-weight-ai-models-and-its-a-big-deal/\">Read more</a>",
+  "media_url": "https://www.zdnet.com/a/img/resize/0895967e4134de25eab33294287fd23d128731de/2025/08/06/812377c2-3b57-4a84-9a3d-e067730ccafe/gettyimages-2225297950.jpg?auto=webp&width=1280",
+  "published_at": "2025-08-06T12:13:16.575803"
+}

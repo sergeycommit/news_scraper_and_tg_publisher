@@ -43,6 +43,7 @@ class ZDNetScraper:
         self.max_tokens = int(os.getenv('MAX_TOKENS', '1000'))
         self.temperature = float(os.getenv('TEMPERATURE', '0.7'))
         self.prompt = os.getenv('PROMPT')
+        self.system_prompt = os.getenv('SYSTEM_PROMPT')
         
         # Конфигурация Telegram
         self.telegram_token = os.getenv('TELEGRAM_BOT_TOKEN')
@@ -854,6 +855,7 @@ class ZDNetScraper:
     
     def create_viral_post(self, article_title=None, article_content=None, article_url=None, topic=None, post=None):
         """Создание вирусного поста с помощью AI"""
+        logger.info(f"create_viral_post called with URL: {article_url}")
         try:
             if self.prompt:
                 # Используем кастомный промпт из .env
@@ -877,10 +879,24 @@ class ZDNetScraper:
                 ссылку: {article_url}
                 """
             
+            # Логируем информацию о системном промпте
+            if self.system_prompt:
+                logger.info("Using custom SYSTEM_PROMPT from .env file")
+            else:
+                logger.info("Using default system prompt")
+            
+            # Определяем системный промпт
+            if post:
+                system_content = "Сделай рефакторинг поста, уменьши количество символов вдвое."
+            elif self.system_prompt:
+                system_content = self.system_prompt
+            else:
+                system_content = "Ты - эксперт по созданию вирусных постов для Telegram. Создавай интересные, информативные и привлекательные посты на русском языке."
+            
             response = self.openai_client.chat.completions.create(
                 model=self.ai_model,
                 messages=[
-                    {"role": "system", "content": "Сделай рефакторинг поста, уменьши количество символов вдвое." if post else self.prompt},
+                    {"role": "system", "content": system_content},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=self.max_tokens,
@@ -891,8 +907,18 @@ class ZDNetScraper:
 
             post_content = self.translate_to_russian(post_content)
 
-            # Добавляем ссылку в конец поста
-            post_content = f"{post_content}\n\n🔗 <a href=\"{article_url}\">Read more</a>"
+            # Проверяем, есть ли уже ссылка в посте
+            has_link = 'href=' in post_content or 'Read more' in post_content or '🔗' in post_content
+            
+            # Добавляем ссылку только если её нет
+            if not has_link and article_url and article_url.strip():
+                post_content = f"{post_content}\n\n🔗 <a href=\"{article_url}\">Read more</a>"
+                logger.info(f"Added link to post: {article_url}")
+            elif not has_link:
+                logger.warning(f"No article URL provided for post: {article_title}")
+                post_content = f"{post_content}\n\n🔗 Read more"
+            else:
+                logger.info("Link already present in post, skipping addition")
             
             # Проверяем наличие хэштегов
             if '#' not in post_content:
@@ -907,7 +933,10 @@ class ZDNetScraper:
             logger.error(f"Error creating viral post: {e}")
             # Fallback к простому посту
             fallback_title = article_title if article_title else "Без заголовка"
-            return f"🚀 {fallback_title}\n\n{article_content[:500] if article_content else 'Нет содержимого'}...\n\n🔗 <a href=\"{article_url}\">Read more</a>"
+            if article_url and article_url.strip():
+                return f"🚀 {fallback_title}\n\n{article_content[:500] if article_content else 'Нет содержимого'}...\n\n🔗 <a href=\"{article_url}\">Read more</a>"
+            else:
+                return f"🚀 {fallback_title}\n\n{article_content[:500] if article_content else 'Нет содержимого'}...\n\n🔗 Read more"
     
     def get_hashtags_for_topic(self, topic):
         """Получение хэштегов для темы"""
@@ -1048,6 +1077,7 @@ class ZDNetScraper:
             count = 0
 
             # Создаем вирусный пост
+            logger.info(f"Creating viral post with URL: {best_article['url']}")
             post_content = self.create_viral_post(
                 best_article['title'],
                 article_data['content'],
@@ -1067,7 +1097,10 @@ class ZDNetScraper:
             if not success and count < 3:
                 logger.info("Retrying with post refactoring...")
                 # Создаем вирусный пост с рефакторингом
-                post_content = self.create_viral_post(post=post_content)
+                post_content = self.create_viral_post(
+                    post=post_content,
+                    article_url=best_article['url']  # Передаем URL для ссылки
+                )
                 
                 if post_content and len(post_content.strip()) >= 50:
                     count += 1
