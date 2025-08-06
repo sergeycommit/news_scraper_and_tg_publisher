@@ -53,9 +53,9 @@ class ZDNetScraper:
         self.ai_url = 'https://www.zdnet.com/topic/artificial-intelligence/'
         self.robotics_url = 'https://www.zdnet.com/topic/robotics/'
         
-        # Даты для фильтрации (только сегодня и вчера)
+        # Даты для фильтрации (статьи не старше 2 дней)
         self.today = date.today()
-        self.yesterday = self.today - timedelta(days=1)
+        self.yesterday = self.today - timedelta(days=2)
         
         # Создаем папку для JSON файлов
         self.json_folder = 'zdnet_articles_archive'
@@ -206,22 +206,24 @@ class ZDNetScraper:
                             logger.warning(f"Error parsing date components: {e}")
                             continue
             
-            # Если не удалось распарсить, возвращаем сегодняшнюю дату
-            logger.warning(f"Could not parse date: {date_text}, using today's date")
-            return self.today
+            # Если не удалось распарсить, возвращаем None
+            logger.warning(f"Could not parse date: {date_text}")
+            return None
             
         except Exception as e:
             logger.error(f"Error parsing date '{date_text}': {e}")
-            return self.today
+            return None
     
     def extract_date_from_url(self, url):
         """Извлечение даты из URL статьи"""
         try:
-            # Паттерны для поиска дат в URL
+            # Паттерны для поиска дат в URL ZDNet
             patterns = [
                 r'/(\d{4})/(\d{1,2})/(\d{1,2})/',  # /2025/08/05/
                 r'(\d{4})-(\d{1,2})-(\d{1,2})',    # 2025-08-05
                 r'(\d{1,2})-(\d{1,2})-(\d{4})',    # 08-05-2025
+                r'(\d{4})/(\d{1,2})/(\d{1,2})',    # 2025/08/05
+                r'(\d{1,2})/(\d{1,2})/(\d{4})',    # 08/05/2025
             ]
             
             for pattern in patterns:
@@ -229,12 +231,17 @@ class ZDNetScraper:
                 if match:
                     groups = match.groups()
                     if len(groups) == 3:
-                        if len(groups[0]) == 4:  # YYYY-MM-DD
+                        if len(groups[0]) == 4:  # YYYY-MM-DD или YYYY/MM/DD
                             year, month, day = int(groups[0]), int(groups[1]), int(groups[2])
-                        else:  # MM-DD-YYYY
+                        else:  # MM-DD-YYYY или MM/DD/YYYY
                             month, day, year = int(groups[0]), int(groups[1]), int(groups[2])
                         
-                        return date(year, month, day)
+                        # Проверяем валидность даты
+                        try:
+                            return date(year, month, day)
+                        except ValueError:
+                            logger.warning(f"Invalid date in URL: {year}-{month}-{day}")
+                            continue
             
             return None
             
@@ -243,14 +250,20 @@ class ZDNetScraper:
             return None
     
     def is_article_from_recent_days(self, article_date):
-        """Проверка, что статья из сегодня или вчера"""
-        return article_date >= self.yesterday
+        """Проверка, что статья не старше 2 дней от текущей даты"""
+        is_recent = article_date >= self.yesterday
+        if not is_recent:
+            logger.info(f"Article filtered out - too old: {article_date} (cutoff: {self.yesterday})")
+        return is_recent
     
     def scrape_zdnet_articles(self):
         """Основной метод скрапинга статей с ZDNet"""
         logger.info("Starting ZDNet articles scraping...")
+        logger.info(f"Date filter: articles not older than {self.yesterday} (2 days from today)")
         
         all_articles = []
+        total_found = 0
+        filtered_by_date = 0
         
         # Скрапим статьи с разных разделов
         topics = [
@@ -268,6 +281,7 @@ class ZDNetScraper:
                 logger.error(f"Error scraping {topic_name} articles: {e}")
         
         logger.info(f"Total articles found: {len(all_articles)}")
+        logger.info(f"Date filtering: showing only articles from {self.yesterday} to {self.today}")
         return all_articles
     
     def scrape_topic_page(self, url, topic):
@@ -383,13 +397,26 @@ class ZDNetScraper:
             url_date = self.extract_date_from_url(article_url)
             if url_date:
                 article_date = url_date
+                logger.info(f"Using date from URL: {article_date} for article: {title[:50]}...")
+            
+            # Если не удалось извлечь дату, исключаем статью
+            if article_date is None and not url_date:
+                logger.info(f"Article excluded (no date found): {title[:50]}...")
+                return None
+            
+            # Если есть дата из URL, используем её
+            if url_date:
+                article_date = url_date
+            elif article_date is None:
+                logger.info(f"Article excluded (no valid date): {title[:50]}...")
+                return None
             
             # Проверка, что статья из последних дней
             if not self.is_article_from_recent_days(article_date):
-                logger.info(f"Article too old: {title[:50]}... (date: {article_date})")
+                logger.info(f"Article filtered out (too old): {title[:50]}... (date: {article_date}, cutoff: {self.yesterday})")
                 return None
             
-            logger.info(f"Found article: {title[:50]}... -> {article_url} (date: {article_date})")
+            logger.info(f"Found recent article: {title[:50]}... -> {article_url} (date: {article_date})")
             
             return {
                 'title': title,
@@ -425,10 +452,12 @@ class ZDNetScraper:
                             # Извлекаем дату из URL
                             article_date = self.extract_date_from_url(href)
                             if not article_date:
-                                article_date = self.today  # Используем сегодняшнюю дату как fallback
+                                logger.info(f"Article excluded (no date in URL): {title[:50]}...")
+                                continue  # Пропускаем статьи без даты
                             
                             # Проверяем, что статья из последних дней
                             if self.is_article_from_recent_days(article_date):
+                                logger.info(f"Found recent article (alternative): {title[:50]}... (date: {article_date})")
                                 articles.append({
                                     'title': title,
                                     'url': href,
@@ -436,6 +465,8 @@ class ZDNetScraper:
                                     'description': "",
                                     'topic': topic
                                 })
+                            else:
+                                logger.info(f"Article filtered out (alternative): {title[:50]}... (date: {article_date}, cutoff: {self.yesterday})")
                 
                 except Exception as e:
                     continue
@@ -785,6 +816,10 @@ class ZDNetScraper:
     
     def translate_title_to_russian(self, title):
         """Перевод заголовка на русский язык"""
+        if not title:
+            logger.warning("No title provided for translation")
+            return "Без заголовка"
+        
         try:
             response = self.openai_client.chat.completions.create(
                 model=self.ai_model,
@@ -856,9 +891,8 @@ class ZDNetScraper:
 
             post_content = self.translate_to_russian(post_content)
 
-            article_title = self.translate_title_to_russian(article_title)
-
-            post_content = f"🚀 {article_title}\n\n{post_content}\n\n🔗 <a href=\"{article_url}\">Read more</a>"
+            # Добавляем ссылку в конец поста
+            post_content = f"{post_content}\n\n🔗 <a href=\"{article_url}\">Read more</a>"
             
             # Проверяем наличие хэштегов
             if '#' not in post_content:
@@ -872,7 +906,8 @@ class ZDNetScraper:
         except Exception as e:
             logger.error(f"Error creating viral post: {e}")
             # Fallback к простому посту
-            return f"🚀 {article_title}\n\n{article_content[:500]}...\n\n🔗 <a href=\"{article_url}\">Read more</a>"
+            fallback_title = article_title if article_title else "Без заголовка"
+            return f"🚀 {fallback_title}\n\n{article_content[:500] if article_content else 'Нет содержимого'}...\n\n🔗 <a href=\"{article_url}\">Read more</a>"
     
     def get_hashtags_for_topic(self, topic):
         """Получение хэштегов для темы"""
@@ -984,11 +1019,21 @@ class ZDNetScraper:
             logger.info(f"Selected article: {best_article['title']}")
             logger.info(f"Article URL: {best_article['url']}")
             
+            # Проверяем наличие заголовка
+            if not best_article.get('title') or len(best_article['title'].strip()) < 10:
+                logger.warning("Article title too short or missing")
+                return
+            
             # Скрапим содержимое статьи
             article_data = self.scrape_article_content_and_media(best_article['url'])
             
             if not article_data['content']:
                 logger.warning("No content extracted from article")
+                return
+            
+            # Проверяем минимальную длину контента
+            if len(article_data['content'].strip()) < 100:
+                logger.warning("Article content too short")
                 return
             
             logger.info(f"Extracted content length: {len(article_data['content'])} characters")
@@ -1010,25 +1055,33 @@ class ZDNetScraper:
                 best_article['topic']
             )
 
+            # Проверяем, что пост создан успешно
+            if not post_content or len(post_content.strip()) < 50:
+                logger.error("❌ Failed to create viral post - content too short or empty")
+                return
+
             # Публикуем в Telegram
             success = await self.publish_to_telegram(post_content, media_path)
             
-            while not success and count < 10:
-                # Создаем вирусный пост
+            # Если первая попытка не удалась, пробуем еще раз с рефакторингом
+            if not success and count < 3:
+                logger.info("Retrying with post refactoring...")
+                # Создаем вирусный пост с рефакторингом
                 post_content = self.create_viral_post(post=post_content)
-
-                count += 1
-
-                # Публикуем в Telegram
-                success = await self.publish_to_telegram(post_content, media_path)
-
+                
+                if post_content and len(post_content.strip()) >= 50:
+                    count += 1
+                    # Публикуем в Telegram
+                    success = await self.publish_to_telegram(post_content, media_path)
 
             if success:
                 # Сохраняем данные и добавляем URL в опубликованные
                 self.add_published_url(best_article['url'])
+                self.save_article_data(best_article, post_content, article_data.get('media_url'))
                 logger.info("✅ Article published successfully!")
             else:
-                logger.error("❌ Failed to publish article")
+                logger.error("❌ Failed to publish article to Telegram")
+                # Не отправляем сообщения об ошибках в Telegram
             
             # Очищаем временные файлы
             if media_path and os.path.exists(media_path):
