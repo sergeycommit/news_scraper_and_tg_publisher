@@ -887,7 +887,7 @@ class ZDNetScraper:
             
             # Определяем системный промпт
             if post:
-                system_content = "Сделай рефакторинг поста, уменьши количество символов вдвое."
+                system_content = "Сделай рефакторинг поста, уменьши количество символов до 1000, сохранив его смысл и стиль."
             elif self.system_prompt:
                 system_content = self.system_prompt
             else:
