@@ -11,13 +11,9 @@ import feedparser
 from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
-from openai import OpenAI
-import asyncio
-from telegram import Bot
+from telegram_publisher import TelegramPublisher
 import json
 import time
-import tempfile
-from urllib.parse import urljoin, urlparse
 import sys
 import re
 
@@ -51,8 +47,7 @@ class ZDNetScraper:
         
         # ZDNet URLs
         self.base_url = 'https://www.zdnet.com'
-        self.ai_url = 'https://www.zdnet.com/topic/artificial-intelligence/'
-        self.robotics_url = 'https://www.zdnet.com/topic/robotics/'
+        self.latest_url = 'https://www.zdnet.com/latest/'
         
         # Даты для фильтрации (статьи не старше 2 дней)
         self.today = date.today()
@@ -66,12 +61,16 @@ class ZDNetScraper:
         self.published_urls_file = 'zdnet_published_urls.json'
         self.published_urls = self.load_published_urls()
         
-        # Инициализация клиентов
-        self.openai_client = OpenAI(
-            api_key=self.openrouter_api_key,
-            base_url=self.openrouter_base_url
+        # Файл для отслеживания времени последнего запуска
+        self.last_run_file = 'zdnet_last_run.txt'
+        
+        # Инициализация TelegramPublisher
+        self.telegram_publisher = TelegramPublisher(
+            telegram_token=self.telegram_token,
+            telegram_channel=self.telegram_channel,
+            openai_api_key=self.openrouter_api_key,
+            ai_model=self.ai_model
         )
-        self.telegram_bot = Bot(token=self.telegram_token)
         
         # Заголовки для запросов
         self.headers = {
@@ -132,6 +131,36 @@ class ZDNetScraper:
     def is_url_published(self, url):
         """Проверка, был ли URL уже опубликован"""
         return url in self.published_urls
+    
+    def check_last_run_time(self):
+        """Проверка времени последнего запуска (не чаще чем раз в 6 часов)"""
+        try:
+            if os.path.exists(self.last_run_file):
+                with open(self.last_run_file, 'r') as f:
+                    last_run_str = f.read().strip()
+                    if last_run_str:
+                        from datetime import datetime
+                        last_run = datetime.fromisoformat(last_run_str)
+                        time_diff = datetime.now() - last_run
+                        
+                        # Проверяем, прошло ли 6 часов
+                        if time_diff.total_seconds() < 6 * 3600:  # 6 часов в секундах
+                            hours_remaining = (6 * 3600 - time_diff.total_seconds()) / 3600
+                            logger.info(f"Scraper was run recently. Wait {hours_remaining:.1f} hours before next run.")
+                            return False
+            return True
+        except Exception as e:
+            logger.warning(f"Error checking last run time: {e}")
+            return True
+    
+    def update_last_run_time(self):
+        """Обновление времени последнего запуска"""
+        try:
+            with open(self.last_run_file, 'w') as f:
+                f.write(datetime.now().isoformat())
+            logger.info("Updated last run time")
+        except Exception as e:
+            logger.error(f"Error updating last run time: {e}")
     
     def parse_article_date(self, date_text):
         """Парсинг даты статьи из текста"""
@@ -266,20 +295,16 @@ class ZDNetScraper:
         total_found = 0
         filtered_by_date = 0
         
-        # Скрапим статьи с разных разделов
-        topics = [
-            ('AI', self.ai_url),
-            ('Robotics', self.robotics_url)
-        ]
+        # Скрапим статьи с топика /latest
+        topic_name = 'Latest'
         
-        for topic_name, topic_url in topics:
-            try:
-                logger.info(f"Scraping {topic_name} articles from: {topic_url}")
-                topic_articles = self.scrape_topic_page(topic_url, topic_name)
-                all_articles.extend(topic_articles)
-                logger.info(f"Found {len(topic_articles)} articles in {topic_name}")
-            except Exception as e:
-                logger.error(f"Error scraping {topic_name} articles: {e}")
+        try:
+            logger.info(f"Scraping {topic_name} articles from: {self.latest_url}")
+            topic_articles = self.scrape_topic_page(self.latest_url, topic_name)
+            all_articles.extend(topic_articles)
+            logger.info(f"Found {len(topic_articles)} articles in {topic_name}")
+        except Exception as e:
+            logger.error(f"Error scraping {topic_name} articles: {e}")
         
         logger.info(f"Total articles found: {len(all_articles)}")
         logger.info(f"Date filtering: showing only articles from {self.yesterday} to {self.today}")
@@ -295,23 +320,43 @@ class ZDNetScraper:
             
             soup = BeautifulSoup(response.content, 'html.parser')
             
-            # Ищем статьи на странице
-            article_elements = soup.find_all(['article', 'div'], class_=re.compile(r'article|story|post|item'))
+            # Ищем блок с классом c-listingDefault (основной блок со статьями на /latest)
+            listing_block = soup.find('div', class_='c-listingDefault')
             
-            if not article_elements:
-                # Альтернативный поиск по структуре
-                article_elements = soup.find_all('div', class_=re.compile(r'content|listing|feed'))
-            
-            logger.info(f"Found {len(article_elements)} potential article elements")
-            
-            for element in article_elements:
-                try:
-                    article_info = self.extract_article_info(element, topic)
-                    if article_info:
-                        articles.append(article_info)
-                except Exception as e:
-                    logger.warning(f"Error extracting article info: {e}")
-                    continue
+            if listing_block:
+                logger.info("Found listing block with class 'c-listingDefault'")
+                # Ищем ссылки на статьи внутри этого блока
+                article_links = listing_block.find_all('a', href=True)
+                logger.info(f"Found {len(article_links)} article links in listing block")
+                
+                # Обрабатываем каждую ссылку как потенциальную статью
+                for link in article_links:
+                    try:
+                        article_info = self.extract_article_info_from_link(link, topic)
+                        if article_info:
+                            articles.append(article_info)
+                    except Exception as e:
+                        logger.warning(f"Error extracting article info from link: {e}")
+                        continue
+            else:
+                logger.info("Listing block not found, searching in entire page")
+                # Ищем статьи на странице (fallback)
+                article_elements = soup.find_all(['article', 'div'], class_=re.compile(r'article|story|post|item'))
+                
+                if not article_elements:
+                    # Альтернативный поиск по структуре
+                    article_elements = soup.find_all('div', class_=re.compile(r'content|listing|feed'))
+                
+                logger.info(f"Found {len(article_elements)} potential article elements in entire page")
+                
+                for element in article_elements:
+                    try:
+                        article_info = self.extract_article_info(element, topic)
+                        if article_info:
+                            articles.append(article_info)
+                    except Exception as e:
+                        logger.warning(f"Error extracting article info: {e}")
+                        continue
             
             # Если не нашли статьи стандартным способом, попробуем альтернативный
             if not articles:
@@ -322,6 +367,117 @@ class ZDNetScraper:
         
         return articles
     
+    def extract_article_info_from_link(self, link_element, topic):
+        """Извлечение информации о статье из ссылки (для /latest страницы)"""
+        try:
+            article_url = link_element['href']
+            if not article_url.startswith('http'):
+                article_url = urljoin(self.base_url, article_url)
+            
+            # Проверяем, что это ссылка на статью ZDNet
+            if not article_url.startswith('https://www.zdnet.com/'):
+                return None
+            
+            # Исключаем служебные страницы
+            if any(exclude in article_url.lower() for exclude in ['/topic/', '/meet-the-team/', '/about/', '/contact/', '/privacy/', '/terms/']):
+                return None
+            
+            # Извлекаем заголовок из текста ссылки
+            title = link_element.get_text(strip=True)
+            
+            # Очищаем заголовок от лишних символов
+            title = re.sub(r'\s+', ' ', title).strip()
+            
+            # Проверяем минимальную длину заголовка
+            if len(title) < 10:
+                return None
+            
+            # Исключаем служебные заголовки
+            if any(exclude in title.lower() for exclude in ['see all', 'topic', 'category', 'more']):
+                return None
+            
+            # Поиск даты - ищем в родительском элементе
+            date_text = ""
+            parent = link_element.find_parent()
+            
+            if parent:
+                # 1. Поиск по стандартным селекторам
+                date_element = parent.find(['time', 'span', 'div'], 
+                                         class_=re.compile(r'date|time|published|updated'))
+                if date_element:
+                    date_text = date_element.get_text(strip=True)
+                
+                # 2. Поиск по атрибутам
+                if not date_text:
+                    date_element = parent.find(['time', 'span', 'div'], 
+                                             attrs={'datetime': True})
+                    if date_element:
+                        date_text = date_element.get('datetime', '')
+                
+                # 3. Поиск по тексту с датами
+                if not date_text:
+                    all_text = parent.get_text()
+                    date_patterns = [
+                        r'\b\d{1,2}\s+(hour|hours|minute|minutes|day|days)\s+ago\b',
+                        r'\b\d{1,2}:\d{2}\s+(AM|PM)\s+\w+\s+\d{1,2},?\s+\d{4}\b',
+                        r'\b\w+\s+\d{1,2},?\s+\d{4}\b',
+                        r'\b\d{1,2}/\d{1,2}/\d{4}\b',
+                        r'\b\d{4}-\d{1,2}-\d{1,2}\b'
+                    ]
+                    
+                    for pattern in date_patterns:
+                        match = re.search(pattern, all_text, re.IGNORECASE)
+                        if match:
+                            date_text = match.group(0)
+                            break
+            
+            # Поиск описания в родительском элементе
+            description = ""
+            if parent:
+                desc_element = parent.find(['p', 'div'], 
+                                         class_=re.compile(r'description|excerpt|summary|content'))
+                description = desc_element.get_text(strip=True) if desc_element else ""
+            
+            # Парсинг даты
+            article_date = self.parse_article_date(date_text)
+            
+            # Дополнительная проверка даты из URL (если есть паттерн даты в URL)
+            url_date = self.extract_date_from_url(article_url)
+            if url_date:
+                article_date = url_date
+                logger.info(f"Using date from URL: {article_date} for article: {title[:50]}...")
+            
+            # Если не удалось извлечь дату, исключаем статью
+            if article_date is None and not url_date:
+                logger.info(f"Article excluded (no date found): {title[:50]}...")
+                return None
+            
+            # Если есть дата из URL, используем её
+            if url_date:
+                article_date = url_date
+            elif article_date is None:
+                logger.info(f"Article excluded (no valid date): {title[:50]}...")
+                return None
+            
+            # Проверка, что статья из последних дней
+            if not self.is_article_from_recent_days(article_date):
+                logger.info(f"Article filtered out (too old): {title[:50]}... (date: {article_date}, cutoff: {self.yesterday})")
+                return None
+            
+            logger.info(f"Found recent article: {title[:50]}... -> {article_url} (date: {article_date})")
+            
+            return {
+                'title': title,
+                'url': article_url,
+                'date': article_date,
+                'description': description,
+                'topic': topic
+            }
+            
+        except Exception as e:
+            logger.warning(f"Error extracting article info from link: {e}")
+            return None
+
     def extract_article_info(self, element, topic):
         """Извлечение информации о статье из элемента"""
         try:
@@ -770,50 +926,9 @@ class ZDNetScraper:
             logger.error(f"Error validating image: {e}")
             return False
     
-    def download_media(self, media_url):
-        """Скачивание медиа файла"""
-        if not media_url:
-            return None
-        
-        try:
-            response = requests.get(media_url, headers=self.headers, timeout=30)
-            response.raise_for_status()
-            
-            # Определяем расширение файла
-            content_type = response.headers.get('content-type', '')
-            extension = self.get_media_extension(content_type, media_url, media_url)
-            
-            # Создаем временный файл
-            with tempfile.NamedTemporaryFile(delete=False, suffix=extension) as temp_file:
-                temp_file.write(response.content)
-                temp_path = temp_file.name
-            
-            logger.info(f"Downloaded media: {temp_path}")
-            return temp_path
-            
-        except Exception as e:
-            logger.error(f"Error downloading media: {e}")
-            return None
+    # Метод download_media больше не нужен, логика перенесена в TelegramPublisher
     
-    def get_media_extension(self, content_type, url_path, media_url):
-        """Определение расширения медиа файла"""
-        # По расширению в URL
-        url_extension = os.path.splitext(url_path)[1].lower()
-        if url_extension in ['.jpg', '.jpeg', '.png', '.gif', '.webp']:
-            return url_extension
-        
-        # По content-type
-        if 'image/jpeg' in content_type:
-            return '.jpg'
-        elif 'image/png' in content_type:
-            return '.png'
-        elif 'image/gif' in content_type:
-            return '.gif'
-        elif 'image/webp' in content_type:
-            return '.webp'
-        
-        # По умолчанию
-        return '.jpg'
+    # Метод get_media_extension больше не нужен, так как используется TelegramPublisher
     
     def translate_title_to_russian(self, title):
         """Перевод заголовка на русский язык"""
@@ -822,176 +937,21 @@ class ZDNetScraper:
             return "Без заголовка"
         
         try:
-            response = self.openai_client.chat.completions.create(
-                model=self.ai_model,
-                messages=[
-                    {"role": "system", "content": "Ты - эксперт по переводу заголовков статей на русский язык. Переведи заголовок на русский язык, сохранив его смысл и стиль. Используй кавычки для названий продуктов и компаний. Отдай только титл"},
-                    {"role": "user", "content": f"Переведи этот заголовок на русский язык: {title}"}
-                ],
-                max_tokens=100,
-                temperature=0.3
-            )
-            return response.choices[0].message.content.strip()
+            # Используем TelegramPublisher для перевода
+            return self.telegram_publisher.translate_to_russian(title)
         except Exception as e:
             logger.error(f"Error translating title: {e}")
             return title
 
-    def translate_to_russian(self, post):
-        """Перевод поста на русский язык"""
-        try:
-            response = self.openai_client.chat.completions.create(
-                model=self.ai_model,
-                messages=[
-                    {"role": "system", "content": "Ты - эксперт по переводу постов на русский язык. Переведи пост на русский язык и если символов больше 1000, то рефакторни пост до 1000 символов, сохранив его смысл и стиль. Требования к  Используй кавычки для названий продуктов и компаний. Отдай только пост. "},
-                    {"role": "user", "content": f"Пост: {post}"}
-                ],
-                max_tokens=1000,
-                temperature=0.8
-            )
-            return response.choices[0].message.content.strip()
-        except Exception as e:
-            logger.error(f"Error translating post: {e}")
-            return post
+    # Метод translate_to_russian больше не нужен, логика перенесена в TelegramPublisher
     
-    def create_viral_post(self, article_title=None, article_content=None, article_url=None, topic=None, post=None):
-        """Создание вирусного поста с помощью AI"""
-        logger.info(f"create_viral_post called with URL: {article_url}")
-        try:
-            if self.prompt:
-                # Используем кастомный промпт из .env
-                logger.info("Using custom PROMPT from .env file")
-                # Добавляем информацию о статье в начало промпта с четкими инструкциями
-                article_info = post or f"""
-ЗАГОЛОВОК: {article_title}
-СОДЕРЖАНИЕ СТАТЬИ: {article_content}
-ССЫЛКА: {article_url}
-ТЕМА: {topic}
-"""
-                prompt = article_info
-            else:
-                # Стандартный промпт с четкими инструкциями
-                logger.info("Using default prompt (no PROMPT in .env)")
-                prompt = f"""
-                ЗАГОЛОВОК: {article_title}
-                СОДЕРЖАНИЕ: {article_content}
-                ССЫЛКА: {article_url}
-                ТЕМА: {topic}
-                ссылку: {article_url}
-                """
-            
-            # Логируем информацию о системном промпте
-            if self.system_prompt:
-                logger.info("Using custom SYSTEM_PROMPT from .env file")
-            else:
-                logger.info("Using default system prompt")
-            
-            # Определяем системный промпт
-            if post:
-                system_content = "Сделай рефакторинг поста, уменьши количество символов до 1000, сохранив его смысл и стиль."
-            elif self.system_prompt:
-                system_content = self.system_prompt
-            else:
-                system_content = "Ты - эксперт по созданию вирусных постов для Telegram. Создавай интересные, информативные и привлекательные посты на русском языке."
-            
-            response = self.openai_client.chat.completions.create(
-                model=self.ai_model,
-                messages=[
-                    {"role": "system", "content": system_content},
-                    {"role": "user", "content": prompt}
-                ],
-                max_tokens=self.max_tokens,
-                temperature=1  # Увеличиваем температуру для более креативных постов
-            )
-            
-            post_content = response.choices[0].message.content.strip()
-
-            post_content = self.translate_to_russian(post_content)
-
-            # Проверяем, есть ли уже ссылка в посте
-            has_link = 'href=' in post_content or 'Read more' in post_content or '🔗' in post_content
-            
-            # Добавляем ссылку только если её нет
-            if not has_link and article_url and article_url.strip():
-                post_content = f"{post_content}\n\n🔗 <a href=\"{article_url}\">Read more</a>"
-                logger.info(f"Added link to post: {article_url}")
-            elif not has_link:
-                logger.warning(f"No article URL provided for post: {article_title}")
-                post_content = f"{post_content}\n\n🔗 Read more"
-            else:
-                logger.info("Link already present in post, skipping addition")
-            
-            # Проверяем наличие хэштегов
-            if '#' not in post_content:
-                # Добавляем хэштеги в зависимости от темы
-                hashtags = self.get_hashtags_for_topic(topic)
-                post_content += f"\n\n{hashtags}"
-            
-            logger.info(f"Created viral post for article: {article_title} ({len(post_content)} chars)")
-            return post_content
-            
-        except Exception as e:
-            logger.error(f"Error creating viral post: {e}")
-            # Fallback к простому посту
-            fallback_title = article_title if article_title else "Без заголовка"
-            if article_url and article_url.strip():
-                return f"🚀 {fallback_title}\n\n{article_content[:500] if article_content else 'Нет содержимого'}...\n\n🔗 <a href=\"{article_url}\">Read more</a>"
-            else:
-                return f"🚀 {fallback_title}\n\n{article_content[:500] if article_content else 'Нет содержимого'}...\n\n🔗 Read more"
+    # Метод create_viral_post больше не нужен, логика перенесена в TelegramPublisher
     
-    def get_hashtags_for_topic(self, topic):
-        """Получение хэштегов для темы"""
-        hashtags_map = {
-            'AI': '#ИИ #искусственныйинтеллект #нейросети #AI',
-            'Robotics': '#роботы #робототехника #автоматизация #Robotics',
-            'Tech': '#технологии #инновации #Tech'
-        }
-        return hashtags_map.get(topic, '#технологии #новости')
+    # Метод get_hashtags_for_topic больше не нужен, логика перенесена в TelegramPublisher
 
-    def convert_markdown_to_html(self, text):
-        """Конвертация markdown в HTML для Telegram"""
-        try:
-            # Простые замены для markdown
-            text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)  # Bold
-            text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)      # Italic
-            text = re.sub(r'`(.*?)`', r'<code>\1</code>', text)  # Code
-            text = re.sub(r'\[(.*?)\]\((.*?)\)', r'<a href="\2">\1</a>', text)  # Links
-            
-            return text
-        except Exception as e:
-            logger.error(f"Error converting markdown to HTML: {e}")
-            return text
+    # Метод convert_markdown_to_html больше не нужен, логика перенесена в TelegramPublisher
     
-    async def publish_to_telegram(self, post_content, media_path=None):
-        """Публикация в Telegram"""
-        try:
-            # Конвертируем в HTML
-            html_content = self.convert_markdown_to_html(post_content)
-            
-            if media_path and os.path.exists(media_path):
-                # Отправляем с медиа
-                with open(media_path, 'rb') as media_file:
-                    await self.telegram_bot.send_photo(
-                        chat_id=self.telegram_channel,
-                        photo=media_file,
-                        caption=html_content,
-                        parse_mode='HTML'
-                    )
-                logger.info("Published post with media to Telegram")
-            else:
-                # Отправляем только текст
-                await self.telegram_bot.send_message(
-                    chat_id=self.telegram_channel,
-                    text=html_content,
-                    parse_mode='HTML',
-                    disable_web_page_preview=False
-                )
-                logger.info("Published text post to Telegram")
-            
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error publishing to Telegram: {e}")
-            return False
+    # Метод publish_to_telegram больше не нужен, логика перенесена в TelegramPublisher
     
     def save_article_data(self, article, post_content, media_url=None):
         """Сохранение данных статьи в JSON"""
@@ -1023,6 +983,11 @@ class ZDNetScraper:
         """Основной метод запуска ежедневного скрапинга"""
         try:
             logger.info("🚀 Starting ZDNet daily scraping...")
+            
+            # Проверяем, не запускался ли скрапер недавно
+            if not self.check_last_run_time():
+                logger.info("Scraper was run recently, skipping this run")
+                return
             
             # Скрапим статьи
             articles = self.scrape_zdnet_articles()
@@ -1069,60 +1034,25 @@ class ZDNetScraper:
             if article_data['media_url']:
                 logger.info(f"Found media URL: {article_data['media_url']}")
 
-            # Скачиваем медиа
-            media_path = None
-            if article_data['media_url']:
-                media_path = self.download_media(article_data['media_url'])
-
-            count = 0
-
-            # Создаем вирусный пост
-            logger.info(f"Creating viral post with URL: {best_article['url']}")
-            post_content = self.create_viral_post(
-                best_article['title'],
-                article_data['content'],
-                best_article['url'],
-                best_article['topic']
+            # Создаем пост и публикуем через TelegramPublisher
+            logger.info(f"Creating and publishing post with URL: {best_article['url']}")
+            result = await self.telegram_publisher.create_and_publish_post(
+                title=best_article['title'],
+                content=article_data['content'],
+                article_url=best_article['url'],
+                topic=best_article['topic'],
+                media_url=article_data.get('media_url')
             )
-
-            # Проверяем, что пост создан успешно
-            if not post_content or len(post_content.strip()) < 50:
-                logger.error("❌ Failed to create viral post - content too short or empty")
-                return
-
-            # Публикуем в Telegram
-            success = await self.publish_to_telegram(post_content, media_path)
             
-            # Если первая попытка не удалась, пробуем еще раз с рефакторингом
-            if not success and count < 3:
-                logger.info("Retrying with post refactoring...")
-                # Создаем вирусный пост с рефакторингом
-                post_content = self.create_viral_post(
-                    post=post_content,
-                    article_url=best_article['url']  # Передаем URL для ссылки
-                )
-                
-                if post_content and len(post_content.strip()) >= 50:
-                    count += 1
-                    # Публикуем в Telegram
-                    success = await self.publish_to_telegram(post_content, media_path)
-
-            if success:
+            if result['success']:
                 # Сохраняем данные и добавляем URL в опубликованные
                 self.add_published_url(best_article['url'])
-                self.save_article_data(best_article, post_content, article_data.get('media_url'))
+                self.save_article_data(best_article, result['post_content'], result.get('media_url'))
+                # Обновляем время последнего запуска
+                self.update_last_run_time()
                 logger.info("✅ Article published successfully!")
             else:
-                logger.error("❌ Failed to publish article to Telegram")
-                # Не отправляем сообщения об ошибках в Telegram
-            
-            # Очищаем временные файлы
-            if media_path and os.path.exists(media_path):
-                try:
-                    os.unlink(media_path)
-                    logger.info(f"Cleaned up temporary file: {media_path}")
-                except Exception as e:
-                    logger.warning(f"Could not delete temporary file: {e}")
+                logger.error(f"❌ Failed to publish article: {result.get('error', 'Unknown error')}")
             
         except Exception as e:
             logger.error(f"Error in daily scraping: {e}")
