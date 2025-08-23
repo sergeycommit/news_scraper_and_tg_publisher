@@ -4,25 +4,13 @@ from theverge_scraper import TheVergeAIScraper
 from zdnet_scraper import ZDNetScraper
 from wired_scraper import WiredRobotsScraper
 from sciencedaily_scraper import ScienceDailyScraper
-from sciencedaily_summary_scraper import ScienceDailySummaryScraper
 
 
 async def run_all_scrapers():
     """Запуск всех скраперов последовательно"""
     print("🚀 Starting all scrapers...")
-
-    # 0. ScienceDaily RSS Scraper
-    print("\n🔬 Starting ScienceDaily RSS scraper...")
-    sciencedaily_scraper = ScienceDailyScraper()
-    sciencedaily_result = await sciencedaily_scraper.run_daily_scraping()
-
-    if sciencedaily_result:
-        print(f"✅ ScienceDaily: Published article: {sciencedaily_result['title']}")
-        return
-    else:
-        print("ℹ️ ScienceDaily: No new articles to publish")
     
-    # 1. Wired Robots Scraper
+    # 0. Wired Robots Scraper
     print("\n🤖 Starting Wired Robots scraper...")
     wired_scraper = WiredRobotsScraper()
     wired_result = await wired_scraper.run_daily_scraping()
@@ -32,6 +20,17 @@ async def run_all_scrapers():
         return
     else:
         print("ℹ️ Wired: No new articles to publish")
+
+    # 1. ScienceDaily RSS Scraper
+    print("\n🔬 Starting ScienceDaily RSS scraper...")
+    sciencedaily_scraper = ScienceDailyScraper()
+    sciencedaily_result = await sciencedaily_scraper.run_daily_scraping()
+
+    if sciencedaily_result:
+        print(f"✅ ScienceDaily: Published article: {sciencedaily_result['title']}")
+        return
+    else:
+        print("ℹ️ ScienceDaily: No new articles to publish")
     
     # 2. The Verge AI Scraper
     print("\n📰 Starting The Verge AI scraper...")
