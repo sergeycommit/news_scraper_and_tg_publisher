@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Запуск ZDNet Scraper
+Запуск ScienceDaily RSS Scraper
 """
 
 import asyncio
-from zdnet_scraper import ZDNetScraper
+from sciencedaily_scraper import ScienceDailyScraper
 
 async def main():
     """Основная функция запуска"""
-    scraper = ZDNetScraper()
+    scraper = ScienceDailyScraper()
     result = await scraper.run_daily_scraping()
     
     if result:

@@ -1,13 +1,29 @@
-# ZDNet Scraper & Telegram Publisher
+# News Scrapers & Telegram Publisher
 
-🤖 Автоматический скрапер статей ZDNet с публикацией в Telegram канал
+🤖 Автоматические скраперы новостей с публикацией в Telegram канал
 
 ## Описание
 
-Этот проект содержит автоматический скрапер ZDNet:
+Этот проект содержит автоматические скраперы для нескольких новостных сайтов:
 
-### ZDNet Scraper ⭐ **ОСНОВНОЙ СКРАПЕР**
+### The Verge AI Scraper 📰
+- Скрапит статьи с The Verge по теме AI и искусственного интеллекта
+- Фильтрует статьи не старше 2 дней от текущей даты
+- Автоматически выбирает лучшие статьи с помощью AI
+- Извлекает высококачественные изображения
+- Создает виральные посты на русском языке
+- Публикует в Telegram канал с медиафайлами
+
+### ZDNet Scraper 🔬
 - Скрапит статьи с ZDNet по темам AI и Robotics
+- Фильтрует статьи не старше 2 дней от текущей даты
+- Автоматически выбирает лучшие статьи с помощью AI
+- Извлекает высококачественные изображения
+- Создает виральные посты на русском языке
+- Публикует в Telegram канал с медиафайлами
+
+### Wired Robots Scraper 🤖
+- Скрапит статьи с Wired по теме роботов и автоматизации
 - Фильтрует статьи не старше 2 дней от текущей даты
 - Автоматически выбирает лучшие статьи с помощью AI
 - Извлекает высококачественные изображения
@@ -16,9 +32,8 @@
 
 ## Особенности
 
-### ZDNet Scraper ⭐ **ОСНОВНОЙ**
+### Общие возможности для всех скраперов
 - 🧠 **ИИ-анализ контента** - использует AI для выбора лучших статей
-- 📊 **Множественные темы** - анализирует AI и Robotics разделы
 - 📅 **Фильтрация по дате** - показывает только статьи не старше 2 дней
 - 🎯 **Умная фильтрация** - исключает служебные страницы и дубликаты
 - 🤖 **AI-генерация постов** - создает виральные посты на русском языке
@@ -30,19 +45,61 @@
 - 🔄 **Защита от дублирования** - автоматически отслеживает уже опубликованные статьи
 - 🛠️ **Управление URL** - утилиты для просмотра и управления списками
 
+### The Verge AI Scraper 📰
+- 🧠 **AI-тематика** - специализируется на статьях об искусственном интеллекте
+- 📊 **Технологические новости** - охватывает последние достижения в AI
+
+### ZDNet Scraper 🔬
+- 📊 **Множественные темы** - анализирует AI и Robotics разделы
+- 🔬 **Технические статьи** - фокус на технических аспектах технологий
+
+### Wired Robots Scraper 🤖
+- 🤖 **Робототехника** - специализируется на статьях о роботах и автоматизации
+- 🚀 **Инновации** - охватывает последние достижения в робототехнике
+
 ## Быстрый старт
 
-### ZDNet Scraper ⭐ **ОСНОВНОЙ**
+### Запуск всех скраперов
 ```bash
-# Запуск скрапера
-python run_zdnet_scraper.py
-
-# Управление URL
-python manage_zdnet_urls.py help
+# Запуск всех скраперов одновременно
+python main.py
 ```
 
-Подробные инструкции:
-- [QUICK_START_ZDNET.md](QUICK_START_ZDNET.md) - для ZDNet
+### Запуск отдельных скраперов
+```bash
+# The Verge AI Scraper
+python run_theverge_scraper.py
+
+# ZDNet Scraper
+python run_zdnet_scraper.py
+
+# Wired Robots Scraper
+python run_wired_scraper.py
+
+# ScienceDaily RSS Scraper
+python run_sciencedaily_scraper.py
+
+# ScienceDaily Summary Scraper
+python run_sciencedaily_summary.py
+```
+
+### Управление URL-ами
+```bash
+# The Verge URL management
+python manage_theverge_urls.py help
+
+# ZDNet URL management
+python manage_zdnet_urls.py help
+
+# Wired URL management
+python manage_wired_urls.py help
+
+# ScienceDaily URL management
+python manage_sciencedaily_urls.py help
+
+# ScienceDaily Summary URL management
+python manage_sciencedaily_summary_urls.py help
+```
 
 ## Требования
 
@@ -168,27 +225,33 @@ python manage_ieee_urls.py clear
 
 ```
 news_scraper_and_tg_publisher/
-├── techcrunch_scraper.py    # AI TechCrunch скрапер ⭐
-├── run_ai_scraper.py       # Запуск AI TechCrunch ⭐
-├── run_scraper.py          # Запуск обычного TechCrunch
-├── manage_published_urls.py # Управление TechCrunch URL
-├── ieee_spectrum_scraper.py # IEEE Spectrum скрапер
-├── run_ieee_scraper.py     # Запуск IEEE Spectrum
-├── manage_ieee_urls.py     # Управление IEEE URL
-├── requirements.txt        # Зависимости Python
-├── config.env.example      # Пример конфигурации
-├── .env                    # Ваша конфигурация (создать)
-├── .gitignore             # Исключения для git
-├── scraper.log            # Логи TechCrunch
-├── ieee_scraper.log       # Логи IEEE Spectrum
-├── published_urls.json    # Список TechCrunch URL
-├── ieee_published_urls.json # Список IEEE URL
-├── articles_archive/      # Архив TechCrunch статей
-├── ieee_articles_archive/ # Архив IEEE статей
-├── QUICK_START.md         # Быстрый старт TechCrunch
-├── QUICK_START_IEEE.md    # Быстрый старт IEEE
-├── README_IEEE.md         # Документация IEEE
-└── README.md              # Этот файл
+├── main.py                    # Основной скрипт для запуска всех скраперов
+├── theverge_scraper.py        # The Verge AI скрапер
+├── run_theverge_scraper.py    # Запуск The Verge
+├── manage_theverge_urls.py    # Управление The Verge URL
+├── zdnet_scraper.py           # ZDNet скрапер
+├── run_zdnet_scraper.py       # Запуск ZDNet
+├── manage_zdnet_urls.py       # Управление ZDNet URL
+├── wired_scraper.py           # Wired Robots скрапер
+├── run_wired_scraper.py       # Запуск Wired
+├── manage_wired_urls.py       # Управление Wired URL
+├── sciencedaily_scraper.py    # ScienceDaily RSS скрапер
+├── run_sciencedaily_scraper.py # Запуск ScienceDaily
+├── manage_sciencedaily_urls.py # Управление ScienceDaily URL
+├── sciencedaily_summary_scraper.py # ScienceDaily Summary скрапер ⭐
+├── run_sciencedaily_summary.py    # Запуск ScienceDaily Summary ⭐
+├── manage_sciencedaily_summary_urls.py # Управление Summary URL ⭐
+├── telegram_publisher.py      # Класс для публикации в Telegram
+├── requirements.txt           # Зависимости Python
+├── config.env.example         # Пример конфигурации
+├── .env                       # Ваша конфигурация (создать)
+├── .gitignore                # Исключения для git
+├── theverge_articles_archive/ # Архив The Verge статей
+├── zdnet_articles_archive/    # Архив ZDNet статей
+├── wired_articles_archive/    # Архив Wired статей
+├── sciencedaily_articles_archive/ # Архив ScienceDaily статей
+├── sciencedaily_summary_archive/  # Архив ScienceDaily Summary ⭐
+└── README.md                 # Этот файл
 ```
 
 ## Логирование
@@ -240,6 +303,29 @@ news_scraper_and_tg_publisher/
 3. **Startups** - `https://techcrunch.com/category/startups/feed/`
 4. **Enterprise** - `https://techcrunch.com/category/enterprise/feed/`
 5. **Security** - `https://techcrunch.com/category/security/feed/`
+
+## 🔬 ScienceDaily Summary Scraper
+
+Скрапер для [ScienceDaily RSS](https://www.sciencedaily.com/rss/all.xml) - создает краткое резюме всех научных новостей за сегодня.
+
+**Особенности:**
+- Скрапинг всех новостей за текущий день
+- Создание краткого резюме в одном посте
+- Публикация в Telegram с изображением
+- Собственный промпт для создания постов (без хэштегов)
+- Отслеживание уже опубликованных URL
+- Архивирование данных в JSON формате
+
+**Использование:**
+```bash
+# Запуск модуля
+python3 run_sciencedaily_summary.py
+
+# Управление URL
+python3 manage_sciencedaily_summary_urls.py help
+python3 manage_sciencedaily_summary_urls.py show
+python3 manage_sciencedaily_summary_urls.py clear
+```
 6. **Fintech** - `https://techcrunch.com/category/fintech/feed/`
 7. **Transportation** - `https://techcrunch.com/category/transportation/feed/`
 

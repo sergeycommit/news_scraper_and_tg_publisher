@@ -12,6 +12,7 @@ from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram_publisher import TelegramPublisher
+from urllib.parse import urljoin, urlparse
 import json
 import time
 import sys

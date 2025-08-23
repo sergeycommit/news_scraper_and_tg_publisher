@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Запуск ZDNet Scraper
+Запуск The Verge AI Scraper
 """
 
 import asyncio
-from zdnet_scraper import ZDNetScraper
+from theverge_scraper import TheVergeAIScraper
 
 async def main():
     """Основная функция запуска"""
-    scraper = ZDNetScraper()
+    scraper = TheVergeAIScraper()
     result = await scraper.run_daily_scraping()
     
     if result:

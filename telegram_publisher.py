@@ -184,7 +184,6 @@ class TelegramPublisher:
                 - Написан на русском языке
                 - Содержать эмодзи и форматирование
                 - Не длиннее 800 символов
-                - Включать хештеги по теме
                 """
             
             # Определяем системный промпт
@@ -195,7 +194,7 @@ class TelegramPublisher:
                 system_content = """
                 Ты - эксперт по созданию вирусных постов для социальных сетей.
                 Твоя задача - создавать увлекательные, информативные и вирусные посты на русском языке.
-                Используй эмодзи, форматирование и хештеги для привлечения внимания.
+                Используй эмодзи и форматирование для привлечения внимания.
                 Создавай посты не длиннее 800 символов, чтобы они поместились в подпись к изображению в Telegram.
                 """
             
@@ -217,11 +216,12 @@ class TelegramPublisher:
                 post_content = self.add_link_to_post(post_content, article_url)
                 logger.info(f"Added link to post: {article_url}")
             
-            # Добавляем хештеги
-            if topic:
+            # Добавляем хештеги только для ZDNet (топики Robotics, Latest, Technology)
+            if topic and topic in ['Robotics', 'Latest', 'Technology']:
                 hashtags = self.get_hashtags_for_topic(topic)
                 if hashtags:
                     post_content += f"\n\n{hashtags}"
+                    logger.info(f"Added hashtags for topic '{topic}': {hashtags}")
             
             logger.info(f"Created viral post for article: {title[:50]}... ({len(post_content)} chars)")
             return post_content

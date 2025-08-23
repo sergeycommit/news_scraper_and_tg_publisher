@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-Запуск ZDNet Scraper
+Запуск Wired Robots Scraper
 """
 
 import asyncio
-from zdnet_scraper import ZDNetScraper
+from wired_scraper import WiredRobotsScraper
 
 async def main():
     """Основная функция запуска"""
-    scraper = ZDNetScraper()
+    scraper = WiredRobotsScraper()
     result = await scraper.run_daily_scraping()
     
     if result:
