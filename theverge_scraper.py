@@ -747,11 +747,14 @@ class TheVergeAIScraper:
                 self.add_published_url(best_article['url'])
                 self.save_article_data(best_article, result['post_content'], result.get('media_url'))
                 logger.info("✅ Article published successfully!")
+                return best_article
             else:
                 logger.error(f"❌ Failed to publish article: {result.get('error', 'Unknown error')}")
+                return None
             
         except Exception as e:
             logger.error(f"Error in daily scraping: {e}")
+            return None
 
 async def main():
     """Основная функция"""
