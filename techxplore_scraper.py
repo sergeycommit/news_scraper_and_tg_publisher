@@ -17,6 +17,15 @@ import asyncio
 import feedparser
 import time
 
+# Suppress urllib3 LibreSSL warning if present
+try:
+    import warnings
+    import urllib3 as _urllib3
+    from urllib3.exceptions import NotOpenSSLWarning
+    warnings.filterwarnings("ignore", category=NotOpenSSLWarning)
+except Exception:
+    pass
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -65,8 +74,33 @@ class TechxploreScraper:
         
         # Headers for requests
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6_0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
         }
+
+        # HTTP session with retries
+        try:
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            self.session = requests.Session()
+            retry_strategy = Retry(
+                total=3,
+                backoff_factor=0.8,
+                status_forcelist=[429, 403, 422, 500, 502, 503, 504],
+                allowed_methods=["HEAD", "GET", "OPTIONS"]
+            )
+            adapter = HTTPAdapter(max_retries=retry_strategy)
+            self.session.mount('http://', adapter)
+            self.session.mount('https://', adapter)
+            self.session.headers.update(self.headers)
+        except Exception:
+            # Fallback to plain requests if retry setup fails
+            self.session = requests
         
         logger.info("Techxplore Scraper initialized successfully")
 
@@ -78,7 +112,7 @@ class TechxploreScraper:
         try:
             if os.path.exists(self.published_urls_file):
                 with open(self.published_urls_file, 'r', encoding='utf-8') as f:
-                    return json.load().get('published_urls', [])
+                    return json.load(f).get('published_urls', [])
             return []
         except json.JSONDecodeError:
             return []
@@ -114,24 +148,46 @@ class TechxploreScraper:
                     'url': entry.link,
                     'date': article_date,
                     'description': entry.summary,
-                    'topic': 'Robotics'
+                    'topic': None
                 })
         logger.info(f"Found {len(articles)} recent articles from RSS feed")
         return articles
 
     def scrape_article_content_and_media(self, article_url):
         try:
-            response = requests.get(article_url, headers=self.headers, timeout=20)
+            # Some sites like TechXplore require a referer to avoid 422/403
+            headers = dict(self.headers)
+            headers['Referer'] = 'https://techxplore.com/'
+            response = self.session.get(article_url, headers=headers, timeout=25)
+            # If we get a 422/403, try once with a slightly different UA
+            if response.status_code in (403, 422):
+                alt_headers = dict(headers)
+                alt_headers['User-Agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36'
+                time.sleep(1.0)
+                response = self.session.get(article_url, headers=alt_headers, timeout=25)
             response.raise_for_status()
-            soup = BeautifulSoup(response.content, 'html.parser')
+
+            soup = BeautifulSoup(response.content, 'lxml')
             
-            # Extract content
-            content_element = soup.select_one('.article-main')
-            content = content_element.get_text(separator='\n', strip=True) if content_element else ""
-            
-            # Extract media URL
+            # Extract content using multiple fallback selectors
+            selectors = [
+                '.article-main',
+                'div#article-body',
+                'article .text',
+                'article .article-content',
+                'div[itemprop="articleBody"]',
+                'div.article-content'
+            ]
+            content = ""
+            for selector in selectors:
+                el = soup.select_one(selector)
+                if el and el.get_text(strip=True):
+                    content = el.get_text(separator='\n', strip=True)
+                    break
+
+            # Extract media URL (prefer og:image)
             media_element = soup.select_one('meta[property="og:image"]')
-            media_url = media_element['content'] if media_element else None
+            media_url = media_element['content'] if media_element and media_element.has_attr('content') else None
             
             return {'content': content, 'media_url': media_url}
         except Exception as e:
