@@ -44,17 +44,17 @@ async def run_all_scrapers():
         return
     else:
         print("ℹ️ Wired: No new articles to publish")
-
-    # 3. ScienceDaily RSS Scraper
-    print("\n🔬 Starting ScienceDaily RSS scraper...")
-    sciencedaily_scraper = ScienceDailyScraper()
-    sciencedaily_result = await sciencedaily_scraper.run_daily_scraping()
-
-    if sciencedaily_result:
-        print(f"✅ ScienceDaily: Published article: {sciencedaily_result['title']}")
-        return
-    else:
-        print("ℹ️ ScienceDaily: No new articles to publish")
+    #
+    # # 3. ScienceDaily RSS Scraper
+    # print("\n🔬 Starting ScienceDaily RSS scraper...")
+    # sciencedaily_scraper = ScienceDailyScraper()
+    # sciencedaily_result = await sciencedaily_scraper.run_daily_scraping()
+    #
+    # if sciencedaily_result:
+    #     print(f"✅ ScienceDaily: Published article: {sciencedaily_result['title']}")
+    #     return
+    # else:
+    #     print("ℹ️ ScienceDaily: No new articles to publish")
     
     # 4. The Verge AI Scraper
     print("\n📰 Starting The Verge AI scraper...")
