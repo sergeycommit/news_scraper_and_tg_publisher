@@ -1,5 +1,6 @@
 import asyncio
 
+from robotreport_scraper import RobotReportScraper
 from arstechnica_scraper import ArsTechnicaScraper
 from techxplore_scraper import TechxploreScraper
 from theverge_scraper import TheVergeAIScraper
@@ -12,7 +13,18 @@ async def run_all_scrapers():
     """Запуск всех скраперов последовательно"""
     print("🚀 Starting all scrapers...")
 
-    # 0. Ars Technica Scraper
+    # 0. The Robot Report Scraper (AI/Cognition) - FIRST PRIORITY
+    print("\n🤖 Exploring The Robot Report for AI/Cognition articles...")
+    robotreport_scraper = RobotReportScraper()
+    robotreport_result = await robotreport_scraper.run_daily_scraping()
+
+    if robotreport_result:
+        print(f"✅ The Robot Report: Published article: {robotreport_result['title']}")
+        return
+    else:
+        print("ℹ️ The Robot Report: No new articles to publish")
+
+    # 1. Ars Technica Scraper
     print("\nExploring Ars Technica for new articles...")
     arstechnica_scraper = ArsTechnicaScraper()
     arstechnica_result = await arstechnica_scraper.run_daily_scraping()
@@ -23,7 +35,7 @@ async def run_all_scrapers():
     else:
         print("ℹ️ Ars Technica: No new articles to publish")
 
-    # 1. Techxplore Scraper
+    # 2. Techxplore Scraper
     print("\nExploring Techxplore for new articles...")
     techxplore_scraper = TechxploreScraper()
     techxplore_result = await techxplore_scraper.run_daily_scraping()
@@ -34,7 +46,7 @@ async def run_all_scrapers():
     else:
         print("ℹ️ Techxplore: No new articles to publish")
 
-    # 2. Wired Robots Scraper
+    # 3. Wired Robots Scraper
     print("\n🤖 Starting Wired Robots scraper...")
     wired_scraper = WiredRobotsScraper()
     wired_result = await wired_scraper.run_daily_scraping()
@@ -45,7 +57,7 @@ async def run_all_scrapers():
     else:
         print("ℹ️ Wired: No new articles to publish")
     #
-    # # 3. ScienceDaily RSS Scraper
+    # # 4. ScienceDaily RSS Scraper
     # print("\n🔬 Starting ScienceDaily RSS scraper...")
     # sciencedaily_scraper = ScienceDailyScraper()
     # sciencedaily_result = await sciencedaily_scraper.run_daily_scraping()
@@ -56,7 +68,7 @@ async def run_all_scrapers():
     # else:
     #     print("ℹ️ ScienceDaily: No new articles to publish")
     
-    # 4. The Verge AI Scraper
+    # 5. The Verge AI Scraper
     print("\n📰 Starting The Verge AI scraper...")
     verge_scraper = TheVergeAIScraper()
     verge_result = await verge_scraper.run_daily_scraping()
@@ -67,7 +79,7 @@ async def run_all_scrapers():
     else:
         print("ℹ️ The Verge: No new articles to publish")
     
-    # 5. ZDNet Scraper
+    # 6. ZDNet Scraper
     print("\n🔬 Starting ZDNet scraper...")
     zdnet_scraper = ZDNetScraper()
     zdnet_result = await zdnet_scraper.run_daily_scraping()
