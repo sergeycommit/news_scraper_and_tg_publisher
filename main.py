@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 
 from robotreport_scraper import RobotReportScraper
 from arstechnica_scraper import ArsTechnicaScraper
@@ -13,16 +14,20 @@ async def run_all_scrapers():
     """Запуск всех скраперов последовательно"""
     print("🚀 Starting all scrapers...")
 
-    # 0. The Robot Report Scraper (AI/Cognition) - FIRST PRIORITY
-    print("\n🤖 Exploring The Robot Report for AI/Cognition articles...")
-    robotreport_scraper = RobotReportScraper()
-    robotreport_result = await robotreport_scraper.run_daily_scraping()
+    # 0. The Robot Report Scraper (AI/Cognition) - FIRST PRIORITY (только по четным числам)
+    current_day = datetime.now().day
+    if current_day % 2 == 0:
+        print(f"\n🤖 Exploring The Robot Report for AI/Cognition articles... (Day {current_day} is even)")
+        robotreport_scraper = RobotReportScraper()
+        robotreport_result = await robotreport_scraper.run_daily_scraping()
 
-    if robotreport_result:
-        print(f"✅ The Robot Report: Published article: {robotreport_result['title']}")
-        return
+        if robotreport_result:
+            print(f"✅ The Robot Report: Published article: {robotreport_result['title']}")
+            return
+        else:
+            print("ℹ️ The Robot Report: No new articles to publish")
     else:
-        print("ℹ️ The Robot Report: No new articles to publish")
+        print(f"\n⏭️ The Robot Report: Skipped (Day {current_day} is odd, only runs on even days)")
 
     # 1. Ars Technica Scraper
     print("\nExploring Ars Technica for new articles...")

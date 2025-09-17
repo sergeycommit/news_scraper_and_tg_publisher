@@ -12,6 +12,7 @@ from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram_publisher import TelegramPublisher
+from published_urls_manager import get_urls_manager
 from urllib.parse import urljoin, urlparse
 import json
 import time
@@ -58,9 +59,9 @@ class ZDNetScraper:
         self.json_folder = 'zdnet_articles_archive'
         self.create_json_folder()
         
-        # Файл для отслеживания опубликованных URL
-        self.published_urls_file = 'zdnet_published_urls.json'
-        self.published_urls = self.load_published_urls()
+        # Менеджер для отслеживания опубликованных URL
+        self.urls_manager = get_urls_manager()
+        self.source_name = 'zdnet'
         
         # Файл для отслеживания времени последнего запуска
         self.last_run_file = 'zdnet_last_run.txt'
@@ -84,7 +85,8 @@ class ZDNetScraper:
         }
         
         logger.info("ZDNet Scraper initialized successfully")
-        logger.info(f"Loaded {len(self.published_urls)} previously published URLs")
+        published_count = len(self.urls_manager.get_published_urls(self.source_name))
+        logger.info(f"Loaded {published_count} previously published URLs")
         logger.info(f"Filtering articles for today and yesterday: {self.yesterday} to {self.today}")
     
     def create_json_folder(self):
@@ -101,38 +103,20 @@ class ZDNetScraper:
     
     def load_published_urls(self):
         """Загрузка списка уже опубликованных URL"""
-        try:
-            if os.path.exists(self.published_urls_file):
-                with open(self.published_urls_file, 'r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    return data.get('published_urls', [])
-            else:
-                logger.info(f"Published URLs file not found: {self.published_urls_file}")
-                return []
-        except Exception as e:
-            logger.error(f"Error loading published URLs: {e}")
-            return []
-    
+        return self.urls_manager.get_published_urls(self.source_name)
     def save_published_urls(self):
         """Сохранение списка опубликованных URL"""
-        try:
-            data = {'published_urls': self.published_urls}
-            with open(self.published_urls_file, 'w', encoding='utf-8') as f:
-                json.dump(data, f, indent=2, ensure_ascii=False)
-            logger.info(f"Saved {len(self.published_urls)} published URLs")
-        except Exception as e:
-            logger.error(f"Error saving published URLs: {e}")
-    
+        return self.urls_manager.save_data()
     def add_published_url(self, url):
         """Добавление URL в список опубликованных"""
-        if url not in self.published_urls:
-            self.published_urls.append(url)
-            self.save_published_urls()
-    
+        success = self.urls_manager.add_url(self.source_name, url)
+        if success:
+            self.urls_manager.save_data()
+            logger.info(f"Added and saved URL to published list: {url}")
+        return success
     def is_url_published(self, url):
         """Проверка, был ли URL уже опубликован"""
-        return url in self.published_urls
-    
+        return self.urls_manager.is_url_published(self.source_name, url)
     def check_last_run_time(self):
         """Проверка времени последнего запуска (не чаще чем раз в 6 часов)"""
         try:

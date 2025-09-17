@@ -10,6 +10,7 @@ from datetime import datetime, date, timedelta
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 from telegram_publisher import TelegramPublisher
+from published_urls_manager import get_urls_manager
 from urllib.parse import urljoin
 import json
 import re
@@ -51,9 +52,9 @@ class ArsTechnicaScraper:
         self.json_folder = 'arstechnica_articles_archive'
         self.create_json_folder()
         
-        # File to track published URLs
-        self.published_urls_file = 'arstechnica_published_urls.json'
-        self.published_urls = self.load_published_urls()
+        # Менеджер для отслеживания опубликованных URL
+        self.urls_manager = get_urls_manager()
+        self.source_name = 'arstechnica'
         
         # Initialize TelegramPublisher
         self.telegram_publisher = TelegramPublisher(
@@ -75,26 +76,24 @@ class ArsTechnicaScraper:
             os.makedirs(self.json_folder)
 
     def load_published_urls(self):
-        try:
-            if os.path.exists(self.published_urls_file):
-                with open(self.published_urls_file, 'r', encoding='utf-8') as f:
-                    data = json.load()
-                    return data.get('published_urls', [])
-            return []
-        except json.JSONDecodeError:
-            return []
+        """Загрузка списка уже опубликованных URL (для совместимости)"""
+        return self.urls_manager.get_published_urls(self.source_name)
 
     def save_published_urls(self):
-        with open(self.published_urls_file, 'w', encoding='utf-8') as f:
-            json.dump({'published_urls': self.published_urls}, f, indent=2)
+        """Сохранение списка опубликованных URL (для совместимости)"""
+        return self.urls_manager.save_data()
 
     def add_published_url(self, url):
-        if url not in self.published_urls:
-            self.published_urls.append(url)
-            self.save_published_urls()
+        """Добавление URL в список опубликованных"""
+        success = self.urls_manager.add_url(self.source_name, url)
+        if success:
+            self.urls_manager.save_data()
+            logging.info(f"Added and saved URL to published list: {url}")
+        return success
 
     def is_url_published(self, url):
-        return url in self.published_urls
+        """Проверка, был ли URL уже опубликован"""
+        return self.urls_manager.is_url_published(self.source_name, url)
 
     def parse_article_date(self, published_time):
         try:

@@ -259,17 +259,15 @@ class TelegramPublisher:
             
             post_content = response.choices[0].message.content.strip()
             
-            # Добавляем ссылку на статью
+            # Убираем прямые URL из поста, если AI их добавил
+            if article_url and article_url in post_content:
+                post_content = post_content.replace(article_url, "").strip()
+                logger.info("Removed direct URL from post content")
+            
+            # Добавляем ссылку на статью перед хештегами
             if article_url:
                 post_content = self.add_link_to_post(post_content, article_url)
                 logger.info(f"Added link to post: {article_url}")
-            
-            # Добавляем хештеги только для ZDNet (топики Robotics, Latest, Technology)
-            if topic and topic in ['Robotics', 'Latest', 'Technology']:
-                hashtags = self.get_hashtags_for_topic(topic)
-                if hashtags:
-                    post_content += f"\n\n{hashtags}"
-                    logger.info(f"Added hashtags for topic '{topic}': {hashtags}")
             
             logger.info(f"Created viral post for article: {title[:50]}... ({len(post_content)} chars)")
             return post_content
@@ -279,7 +277,7 @@ class TelegramPublisher:
             return None
     
     def add_link_to_post(self, post_content, article_url):
-        """Добавление ссылки на статью в пост"""
+        """Добавление ссылки на статью в пост перед хештегами"""
         if not article_url:
             return post_content
         
@@ -287,9 +285,34 @@ class TelegramPublisher:
         if article_url in post_content:
             return post_content
         
-        # Добавляем ссылку в конец поста
-        link_text = f'\n\n🔗 <a href="{article_url}">Read more</a>'
-        return post_content + link_text
+        # Ищем хештеги в посте (строки, содержащие хештеги)
+        lines = post_content.split('\n')
+        hashtag_lines = []
+        other_lines = []
+        
+        for line in lines:
+            # Проверяем, содержит ли строка хештеги (начинается с # или содержит #)
+            if line.strip().startswith('#') or ('#' in line and any(word.startswith('#') for word in line.split())):
+                hashtag_lines.append(line)
+            else:
+                other_lines.append(line)
+        
+        # Если есть хештеги, вставляем ссылку перед ними
+        if hashtag_lines:
+            # Убираем пустые строки в конце основного контента
+            while other_lines and not other_lines[-1].strip():
+                other_lines.pop()
+            
+            # Создаем ссылку с отступами
+            link_text = f'🔗 <a href="{article_url}">Read more</a>'
+            
+            # Собираем пост: основной контент + пустая строка + ссылка + пустая строка + хештеги
+            result_lines = other_lines + ['', link_text, ''] + hashtag_lines
+            return '\n'.join(result_lines)
+        else:
+            # Если хештегов нет, добавляем ссылку в конец
+            link_text = f'\n\n🔗 <a href="{article_url}">Read more</a>'
+            return post_content + link_text
     
     def get_hashtags_for_topic(self, topic):
         """Получение хештегов для темы"""
