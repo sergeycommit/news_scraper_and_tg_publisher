@@ -46,6 +46,11 @@ class TelegramPublisher:
         
         # Настройки AI
         self.max_tokens = 1000
+        # Настройки reasoning/"thinking" для OpenRouter совместимых моделей
+        self.thinking_config = {
+            "type": "enabled",
+            "budget_tokens": int(os.getenv('THINKING_BUDGET_TOKENS', '10000'))
+        }
         
         # Загрузка промптов из переменных окружения
         self.custom_prompt = os.getenv('PROMPT', '')
@@ -154,8 +159,6 @@ class TelegramPublisher:
 СОДЕРЖАНИЕ: {content[:1000] + "..." if len(content) > 1000 else content}
 ССЫЛКА: {article_url}
 ТЕМА: {topic or "Technology"}
-
-ВАЖНО: Перед хештегами обязательно добавь ссылку "Read more" в формате: 🔗 <a href="{article_url}">Read more</a>
 """
                     logger.info("Using custom PROMPT from .env file + article info")
                 else:
@@ -216,8 +219,6 @@ class TelegramPublisher:
 СОДЕРЖАНИЕ: {content[:1000] + "..." if len(content) > 1000 else content}
 ССЫЛКА: {article_url}
 ТЕМА: {topic or "Technology"}
-
-ВАЖНО: Перед хештегами обязательно добавь ссылку "Read more" в формате: 🔗 <a href="{article_url}">Read more</a>
 """
             else:
                 prompt = f"""
@@ -231,7 +232,6 @@ class TelegramPublisher:
                 - Написан на русском языке
                 - Содержать эмодзи и форматирование
                 - Не длиннее 800 символов
-                - Перед хештегами обязательно добавь ссылку "Read more" в формате: 🔗 <a href="{article_url}">Read more</a>
                 """
             
             # Определяем системный промпт
@@ -246,16 +246,26 @@ class TelegramPublisher:
                 Создавай посты не длиннее 800 символов, чтобы они поместились в подпись к изображению в Telegram.
                 """
             
-            # Генерируем пост
-            response = self.openai_client.chat.completions.create(
-                model=self.ai_model,
-                messages=[
+            # Генерируем пост (с попыткой использовать reasoning/"thinking")
+            completion_kwargs = {
+                "model": self.ai_model,
+                "messages": [
                     {"role": "system", "content": system_content + " Создавай посты не длиннее 800 символов, чтобы они поместились в подпись к изображению в Telegram."},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=self.max_tokens,
-                temperature=1  # Увеличиваем температуру для более креативных постов
-            )
+                "max_tokens": self.max_tokens,
+                "temperature": 1
+            }
+            try:
+                # Некоторые модели поддерживают параметр thinking через OpenRouter
+                response = self.openai_client.chat.completions.create(
+                    **completion_kwargs,
+                    thinking=self.thinking_config
+                )
+                logger.info("Used thinking parameter for completion")
+            except Exception as thinking_error:
+                logger.warning(f"Thinking parameter failed or unsupported, retrying without it: {thinking_error}")
+                response = self.openai_client.chat.completions.create(**completion_kwargs)
             
             post_content = response.choices[0].message.content.strip()
             
@@ -281,8 +291,8 @@ class TelegramPublisher:
         if not article_url:
             return post_content
         
-        # Проверяем, есть ли уже ссылка в посте
-        if article_url in post_content:
+        # Проверяем, есть ли уже ссылка/якорь "Read more" в посте
+        if article_url in post_content or re.search(r'Read\s*more', post_content, flags=re.IGNORECASE):
             return post_content
         
         # Ищем хештеги в посте (строки, содержащие хештеги)

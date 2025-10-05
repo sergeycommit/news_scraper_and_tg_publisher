@@ -673,7 +673,9 @@ class RobotReportScraper:
             video_selectors = [
                 'meta[property="og:video"]',  # Open Graph видео
                 'meta[property="og:video:url"]',  # Open Graph видео URL
+                'meta[property="og:video:secure_url"]',  # Open Graph secure видео URL
                 'meta[name="twitter:player"]',  # Twitter видео
+                'link[itemprop="contentUrl"]',  # schema.org VideoObject contentUrl
                 'video[src]',  # HTML5 видео
                 'video source[src]',  # HTML5 видео source
                 '.fluid-width-video-wrapper video',  # Fluid width видео wrapper (приоритет)
@@ -685,12 +687,16 @@ class RobotReportScraper:
                 'iframe[src*="youtu.be"]',  # YouTube короткие ссылки
                 'iframe[src*="youtube"]',  # YouTube встраивание (общий)
                 'iframe[src*="vimeo.com"]',  # Vimeo встраивание
+                'iframe[data-src*="youtube"], iframe[data-lazy-src*="youtube"]',  # ленивые атрибуты
+                '.wp-block-embed__wrapper iframe',  # WP embed wrapper
+                '.wp-block-embed__wrapper a',  # WP embed как ссылка
                 'iframe[src*="player"]',  # Общие видео плееры
                 '.video-container iframe',  # Видео контейнеры
                 '.entry-content iframe',  # iframe в контенте
                 'iframe[title*="video"]',  # iframe с video в title
                 'iframe[title*="demo"]',  # iframe с demo в title
                 'a[href*="youtube.com/watch"]',  # Ссылки на YouTube видео
+                'a[href*="youtube.com/shorts"]',  # Ссылки на YouTube Shorts
                 'a[href*="youtu.be"]',  # Ссылки на YouTube короткие ссылки
                 'a[href*="vimeo.com"]'  # Ссылки на Vimeo
             ]
@@ -708,7 +714,23 @@ class RobotReportScraper:
                     # Для iframe элементов
                     iframe_element = soup.select_one(selector)
                     if iframe_element:
-                        video_url = iframe_element.get('src')
+                        # Пытаемся взять src, затем data-src/data-lazy-src, затем srcdoc
+                        video_url = iframe_element.get('src') or iframe_element.get('data-src') or iframe_element.get('data-lazy-src')
+                        if not video_url:
+                            srcdoc = iframe_element.get('srcdoc')
+                            if srcdoc:
+                                try:
+                                    from bs4 import BeautifulSoup as _BS
+                                    inner = _BS(srcdoc, 'html.parser')
+                                    inner_iframe = inner.find('iframe')
+                                    if inner_iframe and (inner_iframe.get('src') or inner_iframe.get('data-src')):
+                                        video_url = inner_iframe.get('src') or inner_iframe.get('data-src')
+                                    if not video_url:
+                                        a_tag = inner.find('a', href=True)
+                                        if a_tag:
+                                            video_url = a_tag['href']
+                                except Exception:
+                                    pass
                         if video_url:
                             # Конвертируем YouTube embed ссылки в обычные ссылки на видео
                             if 'youtube.com/embed/' in video_url:
@@ -719,6 +741,10 @@ class RobotReportScraper:
                                 video_id = video_url.split('youtu.be/')[1].split('?')[0]
                                 video_url = f"https://www.youtube.com/watch?v={video_id}"
                                 logger.info(f"Converted YouTube short URL to watch URL: {video_url}")
+                            elif 'youtube.com/shorts/' in video_url:
+                                video_id = video_url.split('youtube.com/shorts/')[1].split('?')[0]
+                                video_url = f"https://www.youtube.com/watch?v={video_id}"
+                                logger.info(f"Converted YouTube shorts to watch URL: {video_url}")
                             
                             if self.is_valid_video_url(video_url):
                                 logger.info(f"Found video using iframe selector: {selector}")
@@ -745,9 +771,22 @@ class RobotReportScraper:
                             logger.info(f"Found video using link selector: {selector}")
                             return self.normalize_media_url(video_url, article_url)
             
-            # Альтернативный поиск по всем iframe
+            # Альтернативный поиск по всем iframe (включая ленивые атрибуты и srcdoc)
             for iframe in soup.find_all('iframe'):
-                src = iframe.get('src')
+                src = iframe.get('src') or iframe.get('data-src') or iframe.get('data-lazy-src')
+                if not src and iframe.get('srcdoc'):
+                    try:
+                        from bs4 import BeautifulSoup as _BS
+                        inner = _BS(iframe.get('srcdoc'), 'html.parser')
+                        inner_iframe = inner.find('iframe')
+                        if inner_iframe and (inner_iframe.get('src') or inner_iframe.get('data-src')):
+                            src = inner_iframe.get('src') or inner_iframe.get('data-src')
+                        if not src:
+                            a_tag = inner.find('a', href=True)
+                            if a_tag:
+                                src = a_tag['href']
+                    except Exception:
+                        pass
                 if src:
                     # Конвертируем YouTube embed ссылки в обычные ссылки на видео
                     if 'youtube.com/embed/' in src:
@@ -758,6 +797,10 @@ class RobotReportScraper:
                         video_id = src.split('youtu.be/')[1].split('?')[0]
                         src = f"https://www.youtube.com/watch?v={video_id}"
                         logger.info(f"Converted YouTube short URL to watch URL: {src}")
+                    elif 'youtube.com/shorts/' in src:
+                        video_id = src.split('youtube.com/shorts/')[1].split('?')[0]
+                        src = f"https://www.youtube.com/watch?v={video_id}"
+                        logger.info(f"Converted YouTube shorts to watch URL: {src}")
                     
                     if self.is_valid_video_url(src):
                         logger.info("Found video using iframe search")
@@ -795,6 +838,26 @@ class RobotReportScraper:
                             logger.info(f"Found video using attribute {attr_name}: {video_url}")
                             return self.normalize_media_url(video_url, article_url)
             
+            # JSON-LD VideoObject
+            for script in soup.find_all('script', type='application/ld+json'):
+                try:
+                    import json as _json
+                    data = _json.loads(script.string or "{}")
+                    if isinstance(data, dict):
+                        graph = data.get('@graph') or [data]
+                    elif isinstance(data, list):
+                        graph = data
+                    else:
+                        graph = []
+                    for node in graph:
+                        if isinstance(node, dict) and node.get('@type') in ('VideoObject', 'VideoObjectPage'):
+                            candidate = node.get('contentUrl') or node.get('embedUrl') or node.get('url')
+                            if candidate and self.is_valid_video_url(candidate):
+                                logger.info("Found video via JSON-LD VideoObject")
+                                return self.normalize_media_url(candidate, article_url)
+                except Exception:
+                    continue
+
             logger.info("No video found")
             return None
             

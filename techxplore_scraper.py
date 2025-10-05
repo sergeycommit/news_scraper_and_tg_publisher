@@ -17,6 +17,7 @@ import re
 import asyncio
 import feedparser
 import time
+from email.utils import parsedate_to_datetime
 
 # Suppress urllib3 LibreSSL warning if present
 try:
@@ -53,9 +54,11 @@ class TechxploreScraper:
         # Techxplore RSS URL
         self.rss_url = 'https://techxplore.com/rss-feed/robotics-news/'
         
-        # Date filtering (articles no older than 2 days)
+        # Date filtering (articles not older than SCRAPING_DAYS)
         self.today = date.today()
-        self.yesterday = self.today - timedelta(days=2)
+        scraping_days = int(os.getenv('SCRAPING_DAYS', '2'))
+        self.yesterday = self.today - timedelta(days=scraping_days)
+        logger.info(f"Techxplore date filter: last {scraping_days} days (from {self.yesterday} to {self.today})")
         
         # JSON archive folder
         self.json_folder = 'techxplore_articles_archive'
@@ -129,28 +132,105 @@ class TechxploreScraper:
         """Проверка, был ли URL уже опубликован"""
         return self.urls_manager.is_url_published(self.source_name, url)
 
-    def parse_article_date(self, published_time):
+    def parse_article_date_value(self, value):
+        """Парсинг различных форматов даты из RSS: struct_time или строка."""
         try:
-            return datetime.fromtimestamp(time.mktime(published_time)).date()
-        except Exception as e:
-            logger.error(f"Error parsing date: {e}")
+            if not value:
+                return None
+            # feedparser обычно отдает struct_time
+            if isinstance(value, time.struct_time):
+                return datetime.fromtimestamp(time.mktime(value)).date()
+            # некоторые поля могут быть строкой RFC822/ISO
+            if isinstance(value, str):
+                try:
+                    dt = parsedate_to_datetime(value)
+                    if dt:
+                        return dt.date()
+                except Exception:
+                    pass
             return None
+        except Exception as e:
+            logger.error(f"Error parsing date value: {e}")
+            return None
+
+    def get_entry_date(self, entry):
+        """Достает дату из разных возможных полей RSS и приводит к date."""
+        candidates = [
+            getattr(entry, 'published_parsed', None),
+            getattr(entry, 'updated_parsed', None),
+            getattr(entry, 'created_parsed', None),
+            getattr(entry, 'expired_parsed', None),
+            getattr(entry, 'issued_parsed', None),
+            getattr(entry, 'date_parsed', None),
+            getattr(entry, 'published', None),
+            getattr(entry, 'updated', None),
+            getattr(entry, 'created', None),
+        ]
+        for value in candidates:
+            d = self.parse_article_date_value(value)
+            if d:
+                return d
+        return None
 
     def scrape_articles_from_rss(self):
         logger.info(f"Scraping articles from RSS feed: {self.rss_url}")
-        feed = feedparser.parse(self.rss_url)
+        # Try parsing with explicit headers (some feeds require a UA/Referer)
+        try:
+            feed = feedparser.parse(self.rss_url, request_headers={
+                'User-Agent': self.headers.get('User-Agent', ''),
+                'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8',
+                'Accept-Language': self.headers.get('Accept-Language', 'en-US,en;q=0.9'),
+                'Referer': 'https://techxplore.com/'
+            })
+        except Exception as e:
+            logger.warning(f"feedparser parse with headers failed: {e}")
+            feed = feedparser.parse(self.rss_url)
+
+        total_entries = len(getattr(feed, 'entries', []))
+        logger.info(f"RSS entries fetched: {total_entries}")
+
+        # If empty, try manual HTTP GET with headers then parse content
+        if total_entries == 0:
+            try:
+                logger.info("RSS empty, trying manual HTTP fetch via session...")
+                resp = self.session.get(self.rss_url, headers={
+                    **self.headers,
+                    'Accept': 'application/rss+xml, application/xml;q=0.9, */*;q=0.8',
+                    'Referer': 'https://techxplore.com/'
+                }, timeout=25)
+                resp.raise_for_status()
+                feed = feedparser.parse(resp.content)
+                total_entries = len(getattr(feed, 'entries', []))
+                logger.info(f"Manual fetch RSS entries: {total_entries}")
+            except Exception as e:
+                logger.error(f"Manual RSS fetch failed: {e}")
+
         articles = []
+        skipped_no_date = 0
+        skipped_old = 0
+        debug_preview = 0
         for entry in feed.entries:
-            article_date = self.parse_article_date(entry.published_parsed)
-            if article_date and article_date >= self.yesterday:
-                articles.append({
-                    'title': entry.title,
-                    'url': entry.link,
-                    'date': article_date,
-                    'description': entry.summary,
-                    'topic': None
-                })
-        logger.info(f"Found {len(articles)} recent articles from RSS feed")
+            article_date = self.get_entry_date(entry)
+            if not article_date:
+                skipped_no_date += 1
+                continue
+            if article_date < self.yesterday:
+                skipped_old += 1
+                continue
+            title = getattr(entry, 'title', '').strip()
+            url = getattr(entry, 'link', '').strip()
+            description = getattr(entry, 'summary', '') or getattr(entry, 'description', '') or ''
+            articles.append({
+                'title': title,
+                'url': url,
+                'date': article_date,
+                'description': description,
+                'topic': None
+            })
+            if debug_preview < 5:
+                logger.info(f"Accepted entry: '{title[:80]}' | date={article_date} | url={url}")
+                debug_preview += 1
+        logger.info(f"Found {len(articles)} recent articles from RSS (skipped: no_date={skipped_no_date}, old={skipped_old})")
         return articles
 
     def scrape_article_content_and_media(self, article_url):
