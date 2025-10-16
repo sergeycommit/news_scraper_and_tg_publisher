@@ -1000,6 +1000,33 @@ class RobotReportScraper:
         """Нормализация URL изображения (для обратной совместимости)"""
         return self.normalize_media_url(image_url, article_url)
     
+    async def get_article_headlines(self):
+        """
+        Получает список заголовков статей без скрапинга полного содержимого
+        Используется для LLM-селектора
+        """
+        logger.info("📰 Fetching article headlines from The Robot Report...")
+        articles = self.scrape_robotreport_articles()
+        
+        if not articles:
+            logger.info("No articles found")
+            return []
+        
+        # Фильтруем только неопубликованные
+        unpublished_articles = []
+        for article in articles:
+            if not self.is_url_published(article['url']):
+                unpublished_articles.append({
+                    'title': article['title'],
+                    'url': article['url'],
+                    'description': article.get('description', ''),
+                    'date': article['date'],
+                    'topic': article.get('topic', 'AI/Cognition')
+                })
+        
+        logger.info(f"Found {len(unpublished_articles)} unpublished articles")
+        return unpublished_articles
+    
     def save_article_data(self, article, post_content, media_url=None):
         """Сохранение данных статьи в JSON"""
         try:

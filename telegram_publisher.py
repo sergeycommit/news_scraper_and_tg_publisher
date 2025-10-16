@@ -581,11 +581,100 @@ class TelegramPublisher:
         # Заменяем **текст** на <b>текст</b>
         text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', text)
         
-        # Заменяем *текст* на <i>текст</i>
-        text = re.sub(r'\*(.*?)\*', r'<i>\1</i>', text)
+        # Заменяем *текст* на <i>текст</i> (но не трогаем уже закрытые <b>)
+        text = re.sub(r'(?<!<b>)\*([^*]+?)\*(?!</b>)', r'<i>\1</i>', text)
         
-        # Заменяем переносы строк на \n (Telegram поддерживает \n)
-        text = text.replace('\n', '\n')
+        # Валидируем и исправляем HTML теги
+        text = self.validate_and_fix_html(text)
+        
+        return text
+    
+    def validate_and_fix_html(self, text):
+        """
+        Валидация и исправление HTML-тегов для Telegram
+        Telegram поддерживает: <b>, <i>, <u>, <s>, <code>, <pre>, <a>
+        """
+        if not text:
+            return ""
+        
+        allowed_tags = ['b', 'i', 'u', 's', 'code', 'pre', 'a']
+        
+        # Сначала удаляем неподдерживаемые теги
+        # Находим все теги в тексте
+        tag_pattern = r'</?([a-z]+)(?:\s[^>]*)?>'
+        matches = list(re.finditer(tag_pattern, text, re.IGNORECASE))
+        
+        # Идем в обратном порядке чтобы не сбить индексы
+        for match in reversed(matches):
+            tag_name = match.group(1).lower()
+            if tag_name not in allowed_tags:
+                # Удаляем неподдерживаемый тег
+                text = text[:match.start()] + text[match.end():]
+                logger.debug(f"Removed unsupported HTML tag: {match.group(0)}")
+        
+        # Теперь проверяем баланс оставшихся тегов
+        tag_stack = []
+        position = 0
+        result = []
+        
+        # Парсим текст и отслеживаем открытые/закрытые теги
+        for match in re.finditer(tag_pattern, text, re.IGNORECASE):
+            tag_name = match.group(1).lower()
+            
+            if tag_name not in allowed_tags:
+                continue
+            
+            # Добавляем текст до тега
+            result.append(text[position:match.start()])
+            
+            # Проверяем тип тега
+            if not match.group(0).startswith('</'):
+                # Открывающий тег
+                tag_stack.append(tag_name)
+                result.append(match.group(0))
+            else:
+                # Закрывающий тег
+                if tag_stack and tag_stack[-1] == tag_name:
+                    # Правильно закрытый тег
+                    tag_stack.pop()
+                    result.append(match.group(0))
+                else:
+                    # Закрывающий тег без открывающего - удаляем
+                    logger.warning(f"Found closing tag without opening: {match.group(0)}, removing")
+                    # Не добавляем в result
+            
+            position = match.end()
+        
+        # Добавляем оставшийся текст
+        result.append(text[position:])
+        text = ''.join(result)
+        
+        # Закрываем все незакрытые теги
+        if tag_stack:
+            logger.warning(f"Found {len(tag_stack)} unclosed HTML tags: {tag_stack}, fixing...")
+            for tag in reversed(tag_stack):
+                text += f'</{tag}>'
+        
+        # Экранируем специальные символы вне тегов
+        # Разбиваем текст на части (теги и обычный текст)
+        parts = re.split(r'(<[^>]+>)', text)
+        escaped_parts = []
+        
+        for i, part in enumerate(parts):
+            if part.startswith('<') and part.endswith('>'):
+                # Это тег - не экранируем
+                escaped_parts.append(part)
+            else:
+                # Это текст - экранируем специальные символы
+                # Но сначала проверяем что символы не уже экранированы
+                escaped = part
+                # Экранируем & только если за ним не следует уже экранированная последовательность
+                escaped = re.sub(r'&(?!(amp|lt|gt|quot|apos);)', '&amp;', escaped)
+                # Экранируем < и > которые не являются частью тегов
+                escaped = escaped.replace('<', '&lt;').replace('>', '&gt;')
+                escaped_parts.append(escaped)
+        
+        text = ''.join(escaped_parts)
         
         return text
     

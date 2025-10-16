@@ -645,6 +645,33 @@ class TheVergeAIScraper:
     
     # Метод publish_to_telegram больше не нужен, логика перенесена в TelegramPublisher
     
+    async def get_article_headlines(self):
+        """
+        Получает список заголовков статей без скрапинга полного содержимого
+        Используется для LLM-селектора
+        """
+        logger.info("📰 Fetching article headlines from The Verge...")
+        articles = self.scrape_theverge_articles()
+        
+        if not articles:
+            logger.info("No articles found")
+            return []
+        
+        # Фильтруем только неопубликованные
+        unpublished_articles = []
+        for article in articles:
+            if not self.is_url_published(article['url']):
+                unpublished_articles.append({
+                    'title': article['title'],
+                    'url': article['url'],
+                    'description': article.get('description', ''),
+                    'date': article['date'],
+                    'topic': article.get('topic', 'AI')
+                })
+        
+        logger.info(f"Found {len(unpublished_articles)} unpublished articles")
+        return unpublished_articles
+    
     def save_article_data(self, article, post_content, media_url=None):
         """Сохранение данных статьи в JSON"""
         try:

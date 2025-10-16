@@ -274,6 +274,33 @@ class TechxploreScraper:
             logger.error(f"Error scraping article content: {e}")
             return {'content': "", 'media_url': None}
 
+    async def get_article_headlines(self):
+        """
+        Получает список заголовков статей без скрапинга полного содержимого
+        Используется для LLM-селектора
+        """
+        logger.info("📰 Fetching article headlines from Techxplore...")
+        articles = self.scrape_articles_from_rss()
+        
+        if not articles:
+            logger.info("No articles found")
+            return []
+        
+        # Фильтруем только неопубликованные
+        unpublished_articles = []
+        for article in articles:
+            if not self.is_url_published(article['url']):
+                unpublished_articles.append({
+                    'title': article['title'],
+                    'url': article['url'],
+                    'description': article.get('description', ''),
+                    'date': article['date'],
+                    'topic': article.get('topic', 'Robotics')
+                })
+        
+        logger.info(f"Found {len(unpublished_articles)} unpublished articles")
+        return unpublished_articles
+    
     def save_article_data(self, article, post_content, media_url=None):
         filename = f"article_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         filepath = os.path.join(self.json_folder, filename)
